@@ -79,8 +79,8 @@ class BoxCoder(object):
         dh = rel_codes[:, 3::4] / wh
 
         # Prevent sending too large values into torch.exp()
-        dw = torch.clamp(dw, max=self.bbox_xform_clip)
-        dh = torch.clamp(dh, max=self.bbox_xform_clip)
+        dw = torch.clamp(dw, min=-self.bbox_xform_clip, max=self.bbox_xform_clip)
+        dh = torch.clamp(dh, min=-self.bbox_xform_clip, max=self.bbox_xform_clip)
 
         pred_ctr_x = dx * widths[:, None] + ctr_x[:, None]
         pred_ctr_y = dy * heights[:, None] + ctr_y[:, None]

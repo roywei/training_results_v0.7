@@ -4,6 +4,7 @@ import torch
 from torch.nn import functional as F
 
 from maskrcnn_benchmark.layers import smooth_l1_loss
+from maskrcnn_benchmark.layers import GIoULoss
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.modeling.box_coder import BoxCoder
 from maskrcnn_benchmark.modeling.matcher import Matcher
@@ -25,7 +26,9 @@ class FastRCNNLossComputation(object):
         proposal_matcher, 
         fg_bg_sampler, 
         box_coder, 
-        cls_agnostic_bbox_reg=False
+        cls_agnostic_bbox_reg=False,
+        decode=False,
+        loss="SmoothL1Loss"
     ):
         """
         Arguments:
@@ -37,6 +40,9 @@ class FastRCNNLossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
+        self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=10.0)
+        self.decode = decode
+        self.loss = loss
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -81,9 +87,12 @@ class FastRCNNLossComputation(object):
             labels_per_image.masked_fill(ignore_inds, -1)  # -1 is ignored by sampler
 
             # compute regression targets
-            regression_targets_per_image = self.box_coder.encode(
-                matched_targets_per_image.bbox, proposals_per_image.bbox
-            )
+            if not self.decode:
+                regression_targets_per_image = self.box_coder.encode(
+                    matched_targets_per_image.bbox, proposals_per_image.bbox
+                )
+            else:
+                regression_targets_per_image = matched_targets_per_image.bbox
    
             labels.append(labels_per_image)
             regression_targets.append(regression_targets_per_image)
@@ -196,14 +205,30 @@ class FastRCNNLossComputation(object):
                                                                                                   map_inds.shape[1]) 
         regression_targets_sampled = regression_targets.index_select(0, sampled_pos_inds_subset)
 
-        box_loss = smooth_l1_loss(
-            box_regression_sampled,
-            regression_targets_sampled,
-            size_average=False,
-            beta=1,
-        )
-        box_loss = box_loss / labels.numel()
-
+        if self.loss == "SmoothL1Loss":
+            box_loss = smooth_l1_loss(
+                box_regression_sampled,
+                regression_targets_sampled,
+                size_average=False,
+                beta=1,
+            )
+            box_loss = box_loss / labels.numel()
+        elif self.loss == "GIoULoss":
+            if sampled_pos_inds_subset.size()[0] > 0:
+                rois = torch.cat([a.bbox for a in proposals], dim=0)
+                bbox_pred = box_regression
+                if self.decode:
+                    bbox_pred = self.box_coder(box_regression, rois)
+                    bbox_pred = bbox_pred.view(bbox_pred.size(0), -1, 4)
+                bbox_pred = bbox_pred[sampled_pos_inds_subset, labels_pos]
+                bbox_target = regression_targets[sampled_pos_inds_subset]
+                box_loss = self.giou_loss(
+                    bbox_pred,
+                    bbox_target,
+                    avg_factor=labels.numel()
+                )
+            else:
+                box_loss = box_regression.sum() * 0
         return classification_loss, box_loss
 
 
@@ -227,7 +252,9 @@ def make_roi_box_loss_evaluator(cfg):
         matcher, 
         fg_bg_sampler, 
         box_coder, 
-        cls_agnostic_bbox_reg
+        cls_agnostic_bbox_reg,
+        cfg.MODEL.ROI_BOX_HEAD.DECODE,
+        cfg.MODEL.ROI_BOX_HEAD.LOSS
     )
 
     return loss_evaluator
