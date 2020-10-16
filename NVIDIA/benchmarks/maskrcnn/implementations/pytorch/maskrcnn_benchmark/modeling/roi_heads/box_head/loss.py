@@ -112,9 +112,12 @@ class FastRCNNLossComputation(object):
 
         matched_targets = targets[img_idx, matched_idxs.clamp(min=0)]
 
-        regression_targets = self.box_coder.encode(
-            matched_targets.view(-1,4), proposals.view(-1,4)
-        )
+        if not self.decode:
+            regression_targets = self.box_coder.encode(
+                matched_targets.view(-1,4), proposals.view(-1,4)
+            )
+        else:
+            regression_targets = matched_targets.view(-1,4)
         return labels, regression_targets.view(num_images, -1, 4), matched_idxs
 
     def subsample(self, proposals, targets):
@@ -219,12 +222,11 @@ class FastRCNNLossComputation(object):
                 bbox_pred = box_regression
                 if self.decode:
                     bbox_pred = self.box_coder.decode(box_regression, rois)
-                    bbox_pred = bbox_pred.view(bbox_pred.size(0), -1, 4)
-                bbox_pred = bbox_pred[sampled_pos_inds_subset, labels_pos]
-                bbox_target = regression_targets[sampled_pos_inds_subset]
+                    bbox_pred = bbox_pred.view(-1).index_select(0, index_select_indices)\
+                        .view(map_inds.shape[0], map_inds.shape[1])
                 box_loss = self.giou_loss(
                     bbox_pred,
-                    bbox_target,
+                    regression_targets_sampled,
                     avg_factor=labels.numel()
                 )
             else:
