@@ -54,7 +54,8 @@ _C.INPUT.PIXEL_MEAN = [102.9801, 115.9465, 122.7717]
 _C.INPUT.PIXEL_STD = [1., 1., 1.]
 # Convert image to BGR format (for Caffe2 models), in range 0-255
 _C.INPUT.TO_BGR255 = True
-
+# Add multiplicative gaussian noise
+_C.INPUT.ADD_NOISE = False
 
 # -----------------------------------------------------------------------------
 # Dataset
@@ -358,6 +359,12 @@ _C.SOLVER.WARMUP_ITERS = 500
 _C.SOLVER.WARMUP_METHOD = "linear"
 
 _C.SOLVER.CHECKPOINT_PERIOD = 2500
+
+_C.SOLVER.OPTIMIZER = "SGD"
+_C.SOLVER.BETA1 = 0.9
+_C.SOLVER.BETA2 = 0.25
+_C.SOLVER.LR_SCHEDULE = "MULTISTEP"
+
 
 # Number of images per batch
 # This is global, so if we have 8 GPUs and IMS_PER_BATCH = 16, each GPU will
