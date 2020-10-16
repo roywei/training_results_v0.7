@@ -316,7 +316,6 @@ def main():
     # random number generator with seed set to master_seed
     random_number_generator = random.Random(master_seed)
     log_event(key=constants.SEED, value=master_seed)
-
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.freeze()

@@ -150,6 +150,8 @@ class MaskRCNNLossComputation(object):
         index_select_indices = (positive_inds * mask_logits.size(1) + labels_pos).view(-1)
         mask_logits_sampled = mask_logits.view(-1, H, W).index_select(0, index_select_indices).view(N, H, W)
 
+        #AS: add label smoothing logic here
+
         mask_loss = F.binary_cross_entropy_with_logits(
             mask_logits_sampled, mask_targets
         )

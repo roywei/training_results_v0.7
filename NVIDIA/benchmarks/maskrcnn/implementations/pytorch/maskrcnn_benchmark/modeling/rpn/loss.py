@@ -166,6 +166,8 @@ class RPNLossComputation(object):
             size_average=False,
         ) / (sampled_inds.numel())
 
+        #AS: add label smoothing logic here
+
         objectness_loss = F.binary_cross_entropy_with_logits(
             objectness.index_select(0, sampled_inds), labels.index_select(0, sampled_inds)
         )

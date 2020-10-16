@@ -72,6 +72,19 @@ class RandomHorizontalFlip(object):
         return image, target
 
 
+class RandomMultiplicativeNoise(object):
+    def __init__(self, prob=0.5, mean=0.0, std=0.001):
+        self.mean = mean
+        self.std = std
+        self.prob = prob
+
+    def __call__(self, image, target):
+        if random.random() < self.prob:
+            # scale and shift standard normal
+            image = image * (1.0 + (torch.randn(image.size()) * self.std + self.mean))
+        return image, target
+
+
 class ToTensor(object):
     def __call__(self, image, target):
         return F.to_tensor(image), target
