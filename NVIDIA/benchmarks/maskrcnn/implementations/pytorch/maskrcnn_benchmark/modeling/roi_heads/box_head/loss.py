@@ -218,7 +218,7 @@ class FastRCNNLossComputation(object):
                 rois = torch.cat([a.bbox for a in proposals], dim=0)
                 bbox_pred = box_regression
                 if self.decode:
-                    bbox_pred = self.box_coder(box_regression, rois)
+                    bbox_pred = self.box_coder.decode(box_regression, rois)
                     bbox_pred = bbox_pred.view(bbox_pred.size(0), -1, 4)
                 bbox_pred = bbox_pred[sampled_pos_inds_subset, labels_pos]
                 bbox_target = regression_targets[sampled_pos_inds_subset]
