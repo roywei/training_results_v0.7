@@ -58,7 +58,7 @@ def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
         return torch.stack(masks, dim=0).to(device, dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
-    def __init__(self, proposal_matcher, discretization_size):
+    def __init__(self, proposal_matcher, discretization_size, label_smoothing=0.0):
         """
         Arguments:
             proposal_matcher (Matcher)
@@ -66,6 +66,7 @@ class MaskRCNNLossComputation(object):
         """
         self.proposal_matcher = proposal_matcher
         self.discretization_size = discretization_size
+        self.label_smoothing = label_smoothing
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -151,7 +152,8 @@ class MaskRCNNLossComputation(object):
         mask_logits_sampled = mask_logits.view(-1, H, W).index_select(0, index_select_indices).view(N, H, W)
 
         #AS: add label smoothing logic here
-
+        if self.label_smoothing > 0.0:
+            mask_targets = mask_targets * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
         mask_loss = F.binary_cross_entropy_with_logits(
             mask_logits_sampled, mask_targets
         )
@@ -166,7 +168,7 @@ def make_roi_mask_loss_evaluator(cfg):
     )
 
     loss_evaluator = MaskRCNNLossComputation(
-        matcher, cfg.MODEL.ROI_MASK_HEAD.RESOLUTION
+        matcher, cfg.MODEL.ROI_MASK_HEAD.RESOLUTION, label_smoothing=cfg.MODEL.ROI_HEADS.LS
     )
 
     return loss_evaluator

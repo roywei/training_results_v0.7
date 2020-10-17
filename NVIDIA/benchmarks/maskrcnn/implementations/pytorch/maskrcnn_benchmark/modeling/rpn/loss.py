@@ -24,7 +24,7 @@ class RPNLossComputation(object):
     """
 
     def __init__(self, proposal_matcher, fg_bg_sampler, box_coder,
-                 generate_labels_func):
+                 generate_labels_func, label_smoothing=0.0):
         """
         Arguments:
             proposal_matcher (Matcher)
@@ -38,6 +38,7 @@ class RPNLossComputation(object):
         self.copied_fields = []
         self.generate_labels_func = generate_labels_func
         self.discard_cases = ['not_visibility', 'between_thresholds']
+        self.label_smoothing = label_smoothing
 
     def match_targets_to_anchors(self, anchor, target, copied_fields=[]):
         match_quality_matrix = boxlist_iou(target, anchor)
@@ -167,10 +168,11 @@ class RPNLossComputation(object):
         ) / (sampled_inds.numel())
 
         #AS: add label smoothing logic here
-
-        objectness_loss = F.binary_cross_entropy_with_logits(
-            objectness.index_select(0, sampled_inds), labels.index_select(0, sampled_inds)
-        )
+        pred = objectness.index_select(0, sampled_inds)
+        gt = labels.index_select(0, sampled_inds)
+        if self.label_smoothing > 0.0:
+            gt = gt * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+        objectness_loss = F.binary_cross_entropy_with_logits(pred, gt)
         return objectness_loss, box_loss
 
 # This function should be overwritten in RetinaNet
@@ -199,6 +201,7 @@ def make_rpn_loss_evaluator(cfg, box_coder):
         matcher,
         fg_bg_sampler,
         box_coder,
-        generate_rpn_labels
+        generate_rpn_labels,
+        label_smoothing=cfg.MODEL.RPN.LS
     )
     return loss_evaluator
