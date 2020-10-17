@@ -123,6 +123,8 @@ def do_train(
         # Otherwise apply loss scaling for mixed-precision recipe
         # with optimizer.scale_loss(losses) as scaled_losses:
         optimizer.backward(losses)
+        #AS: Introduce gradient clipping here
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
         optimizer.step()
         # set_grads_to_none(model)
         optimizer.zero_grad()

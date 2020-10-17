@@ -29,12 +29,13 @@ def make_optimizer(cfg, model):
     is_fp16 = (cfg.DTYPE == "float16")
     if is_fp16: # with FP16_Optimizer wrapper
         if cfg.SOLVER.OPTIMIZER == "NovoGrad":
+            print(cfg.SOLVER.BETA1, cfg.SOLVER.BETA2)
             optimizer = FusedNovoGrad(
                 [
                     {"params": params, "lr": lr, "weight_decay": weight_decay},
                     {"params": bias_params, "lr": bias_lr, "weight_decay": bias_weight_decay}
                 ],
-                lr, betas=(cfg.SOLVER.BETA1, cfg.SOLVER.BETA2), grad_averaging=False, init_zero=False, reg_inside_moment=True, bias_correction=True)
+                lr, betas=(cfg.SOLVER.BETA1, cfg.SOLVER.BETA2), eps=1e-7, grad_averaging=False, init_zero=False, reg_inside_moment=True, bias_correction=True)
         elif cfg.SOLVER.OPTIMIZER == "SGD":
             optimizer = FusedSGD(
                 [

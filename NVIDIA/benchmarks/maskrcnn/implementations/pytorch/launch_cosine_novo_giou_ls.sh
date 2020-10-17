@@ -1,8 +1,8 @@
 #!/bin/bash
-BASE_LR=0.01
-MAX_ITER=45000
+BASE_LR=0.008
+MAX_ITER=50000
 WARMUP_FACTOR=0.000133
-WARMUP_ITERS=300
+WARMUP_ITERS=100
 TRAIN_IMS_PER_BATCH=32
 TEST_IMS_PER_BATCH=64
 WEIGHT_DECAY=5e-4
@@ -11,15 +11,14 @@ NCORES_PER_SOCKET=24
 NPROC_PER_NODE=8
 FPN_POST_NMS_TOP_N_TRAIN=8000
 OPTIMIZER="NovoGrad"
-LR_SCHEDULE="MULTISTEP"
+LR_SCHEDULE="COSINE"
 BETA1=0.9
-BETA2=0.4
-STEPS="(30000,40000)"
+BETA2=0.35
 LS=0.1
 
 python -u -m bind_launch --nnodes 1 --node_rank 0 --master_addr 127.0.0.1 --master_port 1234 --nsockets_per_node=${NSOCKETS_PER_NODE} \
  --ncores_per_socket=${NCORES_PER_SOCKET} --nproc_per_node=${NPROC_PER_NODE} \
- tools/train_mlperf.py --config-file 'configs/e2e_mask_rcnn_R_50_FPN_1x.yaml' \
+ tools/train_mlperf.py --config-file 'configs/e2e_mask_rcnn_R_50_FPN_1x_giou_novo_ls.yaml' \
  DTYPE 'float16' \
  PATHS_CATALOG 'maskrcnn_benchmark/config/paths_catalog.py' \
  DISABLE_REDUCED_LOGGING True \
@@ -29,7 +28,6 @@ python -u -m bind_launch --nnodes 1 --node_rank 0 --master_addr 127.0.0.1 --mast
  SOLVER.MAX_ITER ${MAX_ITER} \
  SOLVER.WARMUP_FACTOR ${WARMUP_FACTOR} \
  SOLVER.WARMUP_ITERS ${WARMUP_ITERS} \
- SOLVER.STEPS ${STEPS} \
  SOLVER.WEIGHT_DECAY_BIAS 0 \
  SOLVER.WARMUP_METHOD linear \
  SOLVER.IMS_PER_BATCH ${TRAIN_IMS_PER_BATCH} \
