@@ -167,7 +167,6 @@ class RPNLossComputation(object):
             size_average=False,
         ) / (sampled_inds.numel())
 
-        #AS: add label smoothing logic here
         pred = objectness.index_select(0, sampled_inds)
         gt = labels.index_select(0, sampled_inds)
         if self.label_smoothing > 0.0:

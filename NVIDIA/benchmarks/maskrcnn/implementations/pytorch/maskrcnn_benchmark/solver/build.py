@@ -29,7 +29,6 @@ def make_optimizer(cfg, model):
     is_fp16 = (cfg.DTYPE == "float16")
     if is_fp16: # with FP16_Optimizer wrapper
         if cfg.SOLVER.OPTIMIZER == "NovoGrad":
-            print(cfg.SOLVER.BETA1, cfg.SOLVER.BETA2)
             optimizer = FusedNovoGrad(
                 [
                     {"params": params, "lr": lr, "weight_decay": weight_decay},
