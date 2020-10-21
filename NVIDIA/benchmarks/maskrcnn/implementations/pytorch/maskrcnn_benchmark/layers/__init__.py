@@ -13,9 +13,10 @@ from .roi_pool import roi_pool
 from .smooth_l1_loss import smooth_l1_loss
 from .sigmoid_focal_loss import SigmoidFocalLoss
 from .iou_loss import GIoULoss
+from .pisa_loss import isr_p, carl_loss, bbox2roi
 
 __all__ = ["nms", "roi_align", "ROIAlign", "roi_pool", "ROIPool",
            "smooth_l1_loss", "Conv2d", "ConvTranspose2d", "interpolate",
-           "FrozenBatchNorm2d", "SigmoidFocalLoss", "GIoULoss"
+           "FrozenBatchNorm2d", "SigmoidFocalLoss", "GIoULoss", "isr_p", "carl_loss", "bbox2roi"
           ]
 
