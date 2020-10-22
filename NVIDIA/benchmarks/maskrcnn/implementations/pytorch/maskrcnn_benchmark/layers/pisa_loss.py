@@ -32,8 +32,7 @@ def isr_p(cls_score,
     """
 
     labels, label_weights, bbox_targets, bbox_weights = bbox_targets
-    pos_label_inds = ((labels >= 0) &
-                      (labels < num_class)).nonzero().reshape(-1)
+    pos_label_inds = (labels > 0).nonzero().reshape(-1)
     pos_labels = labels[pos_label_inds]
 
     # if no positive samples, return the original targets
@@ -45,7 +44,7 @@ def isr_p(cls_score,
     gts = list()
     last_max_gt = 0
     for i in range(len(pos_assigned_gt_inds)):
-        gt_i = pos_assigned_gt_inds[i].pos_assigned_gt_inds
+        gt_i = pos_assigned_gt_inds[i]
         gts.append(gt_i + last_max_gt)
         if len(gt_i) != 0:
             last_max_gt = gt_i.max() + 1
@@ -78,24 +77,20 @@ def isr_p(cls_score,
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
     # then sorted again within the same-rank group
     max_l_num = pos_labels.bincount().max()
-    print("pos labels unique: ", len(pos_labels.unique))
     for label in pos_labels.unique():
         l_inds = (pos_labels == label).nonzero().view(-1)
         l_gts = gts[l_inds]
-        print("labels gts: ", len(l_gts.unique))
         for t in l_gts.unique():
             t_inds = l_inds[l_gts == t]
             t_ious = ious[t_inds]
-            print("size of  t ious: ", len(t_ious))
             _, t_iou_rank_idx = t_ious.sort(descending=True)
             _, t_iou_rank = t_iou_rank_idx.sort()
             ious[t_inds] += max_l_num - t_iou_rank.float()
-            print("size of  t ious idx: ", len(t_iou_rank_idx))
         l_ious = ious[l_inds]
         _, l_iou_rank_idx = l_ious.sort(descending=True)
         _, l_iou_rank = l_iou_rank_idx.sort()  # IoU-HLR
         # linearly map HLR to label weights
-        pos_imp_weights[l_inds] *= (max_l_num - l_iou_rank.float()) / max_l_num
+        pos_imp_weights[l_inds] *= (max_l_num - l_iou_rank).float() / max_l_num
 
     pos_imp_weights = (bias + pos_imp_weights * (1 - bias)).pow(k)
 
@@ -145,8 +140,7 @@ def carl_loss(cls_score,
     Return:
         dict: CARL loss dict.
     """
-    pos_label_inds = ((labels >= 0) &
-                      (labels < num_class)).nonzero().reshape(-1)
+    pos_label_inds = (labels > 0).nonzero().reshape(-1)
     if pos_label_inds.numel() == 0:
         return dict(loss_carl=cls_score.sum()[None] * 0.)
     pos_labels = labels[pos_label_inds]
