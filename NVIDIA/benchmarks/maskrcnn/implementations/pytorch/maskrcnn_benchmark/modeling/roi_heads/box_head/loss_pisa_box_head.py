@@ -15,6 +15,7 @@ from maskrcnn_benchmark.modeling.balanced_positive_negative_sampler import (
 from maskrcnn_benchmark.modeling.utils import cat
 from torch.nn.utils.rnn import pad_sequence
 from maskrcnn_benchmark.layers import isr_p, carl_loss
+from maskrcnn_benchmark.layers import CrossEntropyLoss
 
 class PISALossComputation(object):
     """
@@ -42,6 +43,7 @@ class PISALossComputation(object):
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=10.0)
+        self.cls_loss = CrossEntropyLoss()
         self.decode = decode
         self.loss = loss
 
@@ -240,7 +242,7 @@ class PISALossComputation(object):
                 self.box_coder,
                 num_class=80)
 
-        classification_loss = F.cross_entropy(class_logits, labels, weight=bbox_targets[1])
+        classification_loss = self.cls_loss(class_logits, labels, weight=bbox_targets[1])
 
         sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
         labels_pos = labels.index_select(0, sampled_pos_inds_subset)
