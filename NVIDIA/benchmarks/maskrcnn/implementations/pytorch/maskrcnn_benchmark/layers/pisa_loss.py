@@ -171,7 +171,7 @@ def carl_loss(cls_score,
         pos_bbox_preds,
         bbox_targets[pos_label_inds]) / avg_factor
     loss_carl = (ori_loss_reg * carl_loss_weights[:, None]).sum()
-    return dict(loss_carl=loss_carl[None])
+    return loss_carl[None]
 
 
 def bbox_overlaps(bboxes1, bboxes2, mode='iou', is_aligned=False, eps=1e-6):

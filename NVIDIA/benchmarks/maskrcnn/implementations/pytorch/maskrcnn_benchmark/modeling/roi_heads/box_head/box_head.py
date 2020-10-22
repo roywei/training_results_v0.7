@@ -54,9 +54,11 @@ class ROIBoxHead(torch.nn.Module):
         results = self.loss_evaluator(
             [class_logits.float()], [box_regression.float()]
         )
-        loss_dict = dict(loss_classifier=results[0], loss_box_reg=results[1])
+
         if len(results) > 2:
-            loss_dict.update(loss_carl=results[2])
+            loss_dict = dict(loss_classifier=results[0], loss_box_reg=results[1], loss_carl=results[2])
+        else:
+            loss_dict = dict(loss_classifier=results[0], loss_box_reg=results[1])
         return (
             x,
             proposals,
