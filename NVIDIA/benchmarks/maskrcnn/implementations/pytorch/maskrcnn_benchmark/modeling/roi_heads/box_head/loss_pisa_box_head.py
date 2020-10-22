@@ -293,9 +293,11 @@ class PISALossComputation(object):
         loss_carl = carl_loss(
                 class_logits,
                 bbox_targets[0],
-                box_regression_sampled,
+                box_regression,
                 bbox_targets[2],
                 smooth_l1_loss,
+                k=1,
+                bias=0.2,
                 num_class=80)
 
         return classification_loss, box_loss, loss_carl
