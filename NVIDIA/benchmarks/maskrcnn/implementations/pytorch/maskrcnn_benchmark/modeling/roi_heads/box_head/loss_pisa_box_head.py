@@ -242,7 +242,10 @@ class PISALossComputation(object):
                 self.box_coder,
                 num_class=80)
 
-        classification_loss = self.cls_loss(class_logits, labels, weight=bbox_targets[1])
+        classification_loss = self.cls_loss(class_logits,
+                                            labels,
+                                            #weight=bbox_targets[1]
+                                            )
 
         sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
         labels_pos = labels.index_select(0, sampled_pos_inds_subset)
@@ -261,7 +264,7 @@ class PISALossComputation(object):
             box_loss = smooth_l1_loss(
                 box_regression_sampled,
                 regression_targets_sampled,
-                weight=bbox_targets[3], #bbox_weight
+                #weight=bbox_targets[3], #bbox_weight
                 size_average=False,
                 beta=1,
             )
@@ -277,7 +280,7 @@ class PISALossComputation(object):
                 box_loss = self.giou_loss(
                     bbox_pred,
                     regression_targets_sampled,
-                    weight=bbox_targets[3], #bbox_weight
+                    #weight=bbox_targets[3], #bbox_weight
                     avg_factor=labels.numel()
                 )
             else:
