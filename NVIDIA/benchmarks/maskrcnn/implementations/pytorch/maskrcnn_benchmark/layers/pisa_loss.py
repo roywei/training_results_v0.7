@@ -96,7 +96,7 @@ def isr_p(cls_score,
 
     # normalize to make the new weighted loss value equal to the original loss
     pos_loss_cls = loss_cls(
-        cls_score[pos_label_inds], pos_labels, reduction_override='none')
+        cls_score[pos_label_inds], pos_labels)
     if pos_loss_cls.dim() > 1:
         ori_pos_loss_cls = pos_loss_cls * label_weights[pos_label_inds][:,
                                                                         None]
@@ -169,8 +169,7 @@ def carl_loss(cls_score,
         pos_bbox_preds = bbox_pred[pos_label_inds]
     ori_loss_reg = loss_bbox(
         pos_bbox_preds,
-        bbox_targets[pos_label_inds],
-        reduction_override='none') / avg_factor
+        bbox_targets[pos_label_inds]) / avg_factor
     loss_carl = (ori_loss_reg * carl_loss_weights[:, None]).sum()
     return dict(loss_carl=loss_carl[None])
 

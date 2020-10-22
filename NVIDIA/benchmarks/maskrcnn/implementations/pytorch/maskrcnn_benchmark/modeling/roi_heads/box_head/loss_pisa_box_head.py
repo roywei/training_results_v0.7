@@ -161,8 +161,8 @@ class PISALossComputation(object):
             box.add_field("regression_targets", regression_targets[inds])
             box.add_field("labels", labels[inds])
             # TODO: add fields label_weights and target_weights
-            box.add_field("label_weights", torch.ones_like(labels[inds]))
-            box.add_field("target_weights", torch.ones_like(regression_targets[inds]))
+            box.add_field("label_weights", torch.ones_like(labels[inds]).float())
+            box.add_field("target_weights", torch.ones_like(regression_targets[inds]).float())
             box.add_field("sampled_pos_inds", pos_inds_per_image[i])
             box.add_field("sampled_neg_inds", neg_inds_per_image[i])
 
