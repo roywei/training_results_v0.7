@@ -71,7 +71,8 @@ at::Tensor generate_mask_targets_cuda(at::Tensor dense_vector,
                                       const int mask_size);                             
 
 at::Tensor box_iou_cuda(at::Tensor box1, at::Tensor box2);
-                                      
+at::Tensor box_iou_cuda_aligned(at::Tensor box1, at::Tensor box2);
+
 std::vector<at::Tensor> box_encode_cuda(at::Tensor boxes, 
                                      at::Tensor anchors, 
                                      float wx, 

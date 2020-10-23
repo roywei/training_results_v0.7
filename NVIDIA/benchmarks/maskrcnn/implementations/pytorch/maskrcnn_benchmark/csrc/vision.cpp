@@ -26,6 +26,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("sigmoid_focalloss_backward", &SigmoidFocalLoss_backward, "SigmoidFocalLoss_backward");
   m.def("generate_mask_targets", &generate_mask_targets, "generate_mask_targets");
   m.def("box_iou", &box_iou, "box_iou");
+  m.def("box_iou_aligned", &box_iou_aligned, "box_iou_aligned");
   m.def("box_encode", &box_encode, "box_encode");
   m.def("match_proposals", &match_proposals, "match_proposals");
 

@@ -24,5 +24,9 @@ at::Tensor box_iou(at::Tensor box1, at::Tensor box2){
   return result;
 }
 
+at::Tensor box_iou_aligned(at::Tensor box1, at::Tensor box2){
+  at::Tensor result = box_iou_cuda_aligned(box1, box2);
+  return result;
+}
 #endif
 

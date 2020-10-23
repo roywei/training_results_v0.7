@@ -21,7 +21,7 @@
 #include <torch/torch.h>
 #include <iostream>
 
-__global__ void box_iou_cuda_kernel(float *box_iou, float4 *box1, float4 *box2, long num_images, long M,
+__global__ void box_iou_aligned_cuda_kernel(float *box_iou, float4 *box1, float4 *box2, long num_images, long M,
                                     long N, int idxJump) {
 
     int idx = blockIdx.x*blockDim.x + threadIdx.x;
@@ -64,7 +64,7 @@ __global__ void box_iou_cuda_kernel(float *box_iou, float4 *box1, float4 *box2, 
 }
 
 // boxes must have the sizes BxMx4 and BxNx4, respectively
-at::Tensor box_iou_cuda(at::Tensor box1, at::Tensor box2){
+at::Tensor box_iou_cuda_aligned(at::Tensor box1, at::Tensor box2){
 
     int minGridSize;
     int blockSize;
@@ -83,7 +83,7 @@ at::Tensor box_iou_cuda(at::Tensor box1, at::Tensor box2){
     dim3 blockDim(blockSize);
     int idxJump = minGridSize * blockSize;
     auto stream = at::cuda::getCurrentCUDAStream();
-    box_iou_cuda_kernel<<<gridDim, blockDim, 0, stream.stream()>>>(box_iou.data_ptr<float>(),
+    box_iou_aligned_cuda_kernel<<<gridDim, blockDim, 0, stream.stream()>>>(box_iou.data_ptr<float>(),
                                                                   (float4*) box1.data_ptr<float>(),
                                                                   (float4*) box2.data_ptr<float>(),
                                                                   num_images, M, N,
