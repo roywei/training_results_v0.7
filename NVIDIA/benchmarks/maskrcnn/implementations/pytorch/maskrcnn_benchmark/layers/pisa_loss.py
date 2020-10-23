@@ -1,5 +1,5 @@
 import torch
-from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou, boxlist_iou_batched
+from ..structures.boxlist_ops import  boxlist_iou, boxlist_iou_batched
 
 def isr_p(cls_score,
           bbox_pred,
