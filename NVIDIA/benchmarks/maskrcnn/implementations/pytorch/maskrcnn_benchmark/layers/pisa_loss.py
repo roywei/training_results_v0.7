@@ -1,5 +1,5 @@
 import torch
-from ..structures.boxlist_ops import  boxlist_iou, boxlist_iou_batched
+from maskrcnn_benchmark import _C
 
 def isr_p(cls_score,
           bbox_pred,
@@ -290,3 +290,42 @@ def bbox2roi(bbox_list):
         rois_list.append(rois)
     rois = torch.cat(rois_list, 0)
     return rois
+
+
+def boxlist_iou(boxlist1, boxlist2):
+    """Compute the intersection over union of two set of boxes.
+    The box order must be (xmin, ymin, xmax, ymax).
+
+    Arguments:
+      box1: (BoxList) bounding boxes, sized [N,4].
+      box2: (BoxList) bounding boxes, sized [M,4].
+
+    Returns:
+      (tensor) iou, sized [N,M].
+
+    Reference:
+      https://github.com/chainer/chainercv/blob/master/chainercv/utils/bbox/bbox_iou.py
+    """
+    if boxlist1.size != boxlist2.size:
+        raise RuntimeError(
+                "boxlists should have same image size, got {}, {}".format(boxlist1, boxlist2))
+    box1, box2 = boxlist1.bbox, boxlist2.bbox
+    if (box1.is_cuda and box2.is_cuda):
+        iou = _C.box_iou(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
+    else:
+        N = len(boxlist1)
+        M = len(boxlist2)
+
+        area1 = boxlist1.area()
+        area2 = boxlist2.area()
+
+        lt = torch.max(box1[:, None, :2], box2[:, :2])  # [N,M,2]
+        rb = torch.min(box1[:, None, 2:], box2[:, 2:])  # [N,M,2]
+
+        TO_REMOVE = 1
+
+        wh = (rb - lt + TO_REMOVE).clamp(min=0)  # [N,M,2]
+        inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+
+        iou = inter / (area1[:, None] + area2 - inter)
+    return iou
