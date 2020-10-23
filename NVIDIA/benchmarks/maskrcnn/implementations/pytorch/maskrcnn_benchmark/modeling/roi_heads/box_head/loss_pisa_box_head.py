@@ -176,9 +176,6 @@ class PISALossComputation(object):
             box.add_field("label_weights", label_weights.float())
             box.add_field("target_weights", target_weights.float())
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
-            # box.add_field("sampled_pos_inds", pos_inds_per_image[i])
-            # box.add_field("sampled_neg_inds", neg_inds_per_image[i])
-
             result_proposals.append(box)
         self._proposals = result_proposals
 
@@ -225,8 +222,6 @@ class PISALossComputation(object):
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
         # advanced indexing
-        # sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
-        # labels_pos = labels.index_select(0, sampled_pos_inds_subset)
 
         # TODO: get negative sample weights from PISA
         # if neg_label_weights[0] is not None:
@@ -242,8 +237,8 @@ class PISALossComputation(object):
         # Apply ISR-P
         # use default isr_p config: k=2 bias=0
         rois = torch.cat([a.bbox for a in proposals], dim=0)
-        bbox_targets = [labels, label_weights, regression_targets, target_weights]
-        bbox_targets = isr_p(
+        bbox_targets = [labels, label_weights, regression_targets]
+        labels, label_weights, bbox_targets, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels = isr_p(
                 class_logits,
                 box_regression,
                 bbox_targets,
@@ -255,57 +250,63 @@ class PISALossComputation(object):
         avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
-                                            weight=bbox_targets[1],
+                                            weight=label_weights,
                                             avg_factor=avg_factor
                                             )
 
-        sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
-        labels_pos = labels.index_select(0, sampled_pos_inds_subset)
-        if self.cls_agnostic_bbox_reg:
-            map_inds = torch.tensor([4, 5, 6, 7], device=device)
-        else:
-            map_inds = 4 * labels_pos[:, None] + torch.tensor(
-                [0, 1, 2, 3], device=device)
-
-        index_select_indices = ((sampled_pos_inds_subset[:, None]) * box_regression.size(1) + map_inds).view(-1)
-        box_regression_sampled = box_regression.view(-1).index_select(0, index_select_indices).view(map_inds.shape[0],
-                                                                                                    map_inds.shape[1])
-        regression_targets_sampled = regression_targets.index_select(0, sampled_pos_inds_subset)
+        # sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
+        # labels_pos = labels.index_select(0, sampled_pos_inds_subset)
+        # if self.cls_agnostic_bbox_reg:
+        #     map_inds = torch.tensor([4, 5, 6, 7], device=device)
+        # else:
+        #     map_inds = 4 * labels_pos[:, None] + torch.tensor(
+        #         [0, 1, 2, 3], device=device)
+        #
+        # index_select_indices = ((sampled_pos_inds_subset[:, None]) * box_regression.size(1) + map_inds).view(-1)
+        # box_regression_sampled = box_regression.view(-1).index_select(0, index_select_indices).view(map_inds.shape[0],
+        #                                                                                             map_inds.shape[1])
+        # regression_targets_sampled = regression_targets.index_select(0, sampled_pos_inds_subset)
 
         if self.loss == "SmoothL1Loss":
             box_loss = smooth_l1_loss(
-                box_regression_sampled,
-                regression_targets_sampled,
+                pos_delta_pred,
+                pos_delta_target,
+                #weight=target_weights,
                 size_average=False,
                 beta=1,
             )
             box_loss = box_loss / labels.numel()
+            loss_carl = carl_loss(
+                class_logits,
+                pos_label_inds,
+                pos_labels,
+                pos_delta_pred,
+                pos_delta_target,
+                smooth_l1_loss,
+                k=1,
+                bias=0.2,
+                avg_factor=bbox_targets.size(0),
+                num_class=80)
         elif self.loss == "GIoULoss":
-            if sampled_pos_inds_subset.size()[0] > 0:
-                rois = torch.cat([a.bbox for a in proposals], dim=0)
-                bbox_pred = box_regression
-                if self.decode:
-                    bbox_pred = self.box_coder.decode(box_regression, rois)
-                    bbox_pred = bbox_pred.view(-1).index_select(0, index_select_indices) \
-                        .view(map_inds.shape[0], map_inds.shape[1])
+            if pos_bbox_pred.size()[0] > 0:
                 box_loss = self.giou_loss(
-                    bbox_pred,
-                    regression_targets_sampled,
+                    pos_bbox_pred,
+                    target_bbox_pred,
+                    #weight=target_weights,
                     avg_factor=labels.numel()
                 )
             else:
                 box_loss = box_regression.sum() * 0
-
-        # Add CARL Loss
-        # use default carl config k=1 bias=0.2
-        loss_carl = carl_loss(
+            loss_carl = carl_loss(
                 class_logits,
-                bbox_targets[0],
-                box_regression,
-                bbox_targets[2],
-                smooth_l1_loss,
+                pos_label_inds,
+                pos_labels,
+                pos_bbox_pred,
+                target_bbox_pred,
+                self.giou_loss,
                 k=1,
                 bias=0.2,
+                avg_factor=bbox_targets.size(0),
                 num_class=80)
 
         return classification_loss, box_loss, loss_carl

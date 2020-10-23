@@ -1,4 +1,5 @@
 import torch
+from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou, boxlist_iou_batched
 
 def isr_p(cls_score,
           bbox_pred,
@@ -16,7 +17,7 @@ def isr_p(cls_score,
         cls_score (Tensor): Predicted classification scores.
         bbox_pred (Tensor): Predicted bbox deltas.
         bbox_targets (tuple[Tensor]): A tuple of bbox targets, the are
-            labels, label_weights, bbox_targets, bbox_weights, respectively.
+            labels, label_weights, bbox_targets, respectively.
         rois (Tensor): Anchors (single_stage) in shape (n, 4) or RoIs
             (two_stage) in shape (n, 5).
         pos_assigned_gt_inds (tensor): Sampling results.
@@ -31,14 +32,14 @@ def isr_p(cls_score,
             bbox_target_weights
     """
 
-    labels, label_weights, bbox_targets, bbox_weights = bbox_targets
+    labels, label_weights, bbox_targets = bbox_targets
     pos_label_inds = (labels > 0).nonzero().reshape(-1)
     pos_labels = labels[pos_label_inds]
 
     # if no positive samples, return the original targets
     num_pos = float(pos_label_inds.size(0))
     if num_pos == 0:
-        return labels, label_weights, bbox_targets, bbox_weights
+        return labels, label_weights, bbox_targets
 
     # merge pos_assigned_gt_inds of per image to a single tensor
     gts = list()
@@ -71,7 +72,7 @@ def isr_p(cls_score,
     pos_delta_target = bbox_targets[pos_label_inds].view(-1, 4)
     pos_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_pred)
     target_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_target)
-    ious = bbox_overlaps(pos_bbox_pred, target_bbox_pred, is_aligned=True)
+    ious = boxlist_iou(pos_bbox_pred, target_bbox_pred, is_aligned=True)
 
     pos_imp_weights = label_weights[pos_label_inds]
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
@@ -108,12 +109,13 @@ def isr_p(cls_score,
     pos_imp_weights = pos_imp_weights * pos_loss_cls_ratio
     label_weights[pos_label_inds] = pos_imp_weights
 
-    bbox_targets = labels, label_weights, bbox_targets, bbox_weights
+    bbox_targets = labels, label_weights, bbox_targets, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels
     return bbox_targets
 
 
 def carl_loss(cls_score,
-              labels,
+              pos_label_inds,
+              pos_labels,
               bbox_pred,
               bbox_targets,
               loss_bbox,
@@ -140,10 +142,8 @@ def carl_loss(cls_score,
     Return:
         dict: CARL loss dict.
     """
-    pos_label_inds = (labels > 0).nonzero().reshape(-1)
     if pos_label_inds.numel() == 0:
         return dict(loss_carl=cls_score.sum()[None] * 0.)
-    pos_labels = labels[pos_label_inds]
 
     # multiply pos_cls_score with the corresponding bbox weight
     # and remain gradient
@@ -158,18 +158,10 @@ def carl_loss(cls_score,
     weight_ratio = num_pos / carl_loss_weights.sum()
     carl_loss_weights *= weight_ratio
 
-    if avg_factor is None:
-        avg_factor = bbox_targets.size(0)
-    # if is class agnostic, bbox pred is in shape (N, 4)
-    # otherwise, bbox pred is in shape (N, #classes, 4)
-    if bbox_pred.size(-1) > 4:
-        bbox_pred = bbox_pred.view(bbox_pred.size(0), -1, 4)
-        pos_bbox_preds = bbox_pred[pos_label_inds, pos_labels]
-    else:
-        pos_bbox_preds = bbox_pred[pos_label_inds]
+
     ori_loss_reg = loss_bbox(
-        pos_bbox_preds,
-        bbox_targets[pos_label_inds]) / avg_factor
+        bbox_pred,
+        bbox_targets) / avg_factor
     loss_carl = (ori_loss_reg * carl_loss_weights[:, None]).sum()
     return loss_carl[None]
 
