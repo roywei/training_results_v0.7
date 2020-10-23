@@ -4,7 +4,7 @@ def isr_p(cls_score,
           bbox_pred,
           bbox_targets,
           rois,
-          pos_assigned_gt_inds,
+          pos_matched_idxs,
           loss_cls,
           bbox_coder,
           k=2,
@@ -43,8 +43,8 @@ def isr_p(cls_score,
     # merge pos_assigned_gt_inds of per image to a single tensor
     gts = list()
     last_max_gt = 0
-    for i in range(len(pos_assigned_gt_inds)):
-        gt_i = pos_assigned_gt_inds[i]
+    for i in range(len(pos_matched_idxs)):
+        gt_i = pos_matched_idxs[i]
         gts.append(gt_i + last_max_gt)
         if len(gt_i) != 0:
             last_max_gt = gt_i.max() + 1

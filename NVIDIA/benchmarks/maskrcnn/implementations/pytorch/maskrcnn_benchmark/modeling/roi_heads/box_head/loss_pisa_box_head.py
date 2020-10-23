@@ -157,16 +157,27 @@ class PISALossComputation(object):
         matched_idxs = matched_idxs.view(-1)
         result_proposals = []
         for i in range(num_images):
+            num_pos = pos_inds_per_image[i].size(0)
+            num_neg = neg_inds_per_image[i].size(0)
+            num_samples = num_pos + num_neg
             inds = torch.cat([pos_inds_per_image[i], neg_inds_per_image[i]])
             box = BoxList(prop_boxes[inds], image_size=image_sizes[i])
             box.add_field("matched_idxs", matched_idxs[inds])
             box.add_field("regression_targets", regression_targets[inds])
             box.add_field("labels", labels[inds])
             # TODO: add fields label_weights and target_weights
-            box.add_field("label_weights", torch.ones_like(labels[inds]).float())
-            box.add_field("target_weights", torch.ones_like(regression_targets[inds]).float())
-            box.add_field("sampled_pos_inds", pos_inds_per_image[i])
-            box.add_field("sampled_neg_inds", neg_inds_per_image[i])
+            label_weights = labels.new_zeros(num_samples)
+            target_weights = regression_targets.new_zeros(num_samples, 4)
+            if num_pos > 0:
+                label_weights[:num_pos] = 1.0
+                target_weights[:num_pos, :] = 1.0
+            if num_neg > 0:
+                label_weights[-num_neg:] = 1.0
+            box.add_field("label_weights", label_weights)
+            box.add_field("target_weights", target_weights)
+            box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
+            # box.add_field("sampled_pos_inds", pos_inds_per_image[i])
+            # box.add_field("sampled_neg_inds", neg_inds_per_image[i])
 
             result_proposals.append(box)
         self._proposals = result_proposals
@@ -209,7 +220,7 @@ class PISALossComputation(object):
             [proposal.get_field("target_weights") for proposal in proposals], dim=0
         )
 
-        sampled_pos_inds = [proposal.get_field("sampled_pos_inds") for proposal in proposals]
+        pos_matched_idxs = [proposal.get_field("pos_matched_idxs") for proposal in proposals]
 
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
@@ -237,14 +248,14 @@ class PISALossComputation(object):
                 box_regression,
                 bbox_targets,
                 rois,
-                sampled_pos_inds,
-                F.cross_entropy,
+                pos_matched_idxs,
+                self.cls_loss,
                 self.box_coder,
                 num_class=80)
 
         classification_loss = self.cls_loss(class_logits,
                                             labels,
-                                            #weight=bbox_targets[1]
+                                            weight=bbox_targets[1]
                                             )
 
         sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
@@ -264,7 +275,6 @@ class PISALossComputation(object):
             box_loss = smooth_l1_loss(
                 box_regression_sampled,
                 regression_targets_sampled,
-                #weight=bbox_targets[3], #bbox_weight
                 size_average=False,
                 beta=1,
             )
@@ -280,7 +290,6 @@ class PISALossComputation(object):
                 box_loss = self.giou_loss(
                     bbox_pred,
                     regression_targets_sampled,
-                    #weight=bbox_targets[3], #bbox_weight
                     avg_factor=labels.numel()
                 )
             else:
@@ -288,8 +297,6 @@ class PISALossComputation(object):
 
         # Add CARL Loss
         # use default carl config k=1 bias=0.2
-
-
         loss_carl = carl_loss(
                 class_logits,
                 bbox_targets[0],
