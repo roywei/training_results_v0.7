@@ -72,7 +72,7 @@ def isr_p(cls_score,
     pos_delta_target = bbox_targets[pos_label_inds].view(-1, 4)
     pos_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_pred)
     target_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_target)
-    ious = boxlist_iou(pos_bbox_pred, target_bbox_pred, is_aligned=True)
+    ious = bbox_overlaps(pos_bbox_pred, target_bbox_pred, is_aligned=True)
 
     pos_imp_weights = label_weights[pos_label_inds]
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
@@ -292,7 +292,7 @@ def bbox2roi(bbox_list):
     return rois
 
 
-def boxlist_iou(boxlist1, boxlist2):
+def boxlist_iou(box1, box2):
     """Compute the intersection over union of two set of boxes.
     The box order must be (xmin, ymin, xmax, ymax).
 
@@ -306,26 +306,5 @@ def boxlist_iou(boxlist1, boxlist2):
     Reference:
       https://github.com/chainer/chainercv/blob/master/chainercv/utils/bbox/bbox_iou.py
     """
-    if boxlist1.size != boxlist2.size:
-        raise RuntimeError(
-                "boxlists should have same image size, got {}, {}".format(boxlist1, boxlist2))
-    box1, box2 = boxlist1.bbox, boxlist2.bbox
-    if (box1.is_cuda and box2.is_cuda):
-        iou = _C.box_iou(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
-    else:
-        N = len(boxlist1)
-        M = len(boxlist2)
-
-        area1 = boxlist1.area()
-        area2 = boxlist2.area()
-
-        lt = torch.max(box1[:, None, :2], box2[:, :2])  # [N,M,2]
-        rb = torch.min(box1[:, None, 2:], box2[:, 2:])  # [N,M,2]
-
-        TO_REMOVE = 1
-
-        wh = (rb - lt + TO_REMOVE).clamp(min=0)  # [N,M,2]
-        inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
-
-        iou = inter / (area1[:, None] + area2 - inter)
-    return iou
+    #TODO: implement is_aligned option to return [N,1]
+    return _C.box_iou(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
