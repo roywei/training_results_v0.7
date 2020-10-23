@@ -10,14 +10,15 @@ def isr_p(cls_score,
           bbox_coder,
           k=2,
           bias=0,
-          num_class=80):
+          num_class=80,
+          decode=False):
     """Importance-based Sample Reweighting (ISR_P), positive part.
 
     Args:
         cls_score (Tensor): Predicted classification scores.
         bbox_pred (Tensor): Predicted bbox deltas.
         bbox_targets (tuple[Tensor]): A tuple of bbox targets, the are
-            labels, label_weights, bbox_targets, respectively.
+            labels, label_weights, bbox_targets, bbox_weights respectively.
         rois (Tensor): Anchors (single_stage) in shape (n, 4) or RoIs
             (two_stage) in shape (n, 5).
         pos_assigned_gt_inds (tensor): Sampling results.
@@ -32,14 +33,14 @@ def isr_p(cls_score,
             bbox_target_weights
     """
 
-    labels, label_weights, bbox_targets = bbox_targets
+    labels, label_weights, bbox_targets, bbox_weights = bbox_targets
     pos_label_inds = (labels > 0).nonzero().reshape(-1)
     pos_labels = labels[pos_label_inds]
 
     # if no positive samples, return the original targets
     num_pos = float(pos_label_inds.size(0))
     if num_pos == 0:
-        return labels, label_weights, bbox_targets
+        return labels, label_weights, bbox_targets, bbox_weights
 
     # merge pos_assigned_gt_inds of per image to a single tensor
     gts = list()
@@ -71,7 +72,11 @@ def isr_p(cls_score,
     # compute iou of the predicted bbox and the corresponding GT
     pos_delta_target = bbox_targets[pos_label_inds].view(-1, 4)
     pos_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_pred)
-    target_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_target)
+    # do not decode target for giou loss
+    if not decode:
+        target_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_target)
+    else:
+        target_bbox_pred = pos_delta_target
     ious = bbox_overlaps(pos_bbox_pred, target_bbox_pred, is_aligned=True)
 
     pos_imp_weights = label_weights[pos_label_inds]
@@ -109,7 +114,7 @@ def isr_p(cls_score,
     pos_imp_weights = pos_imp_weights * pos_loss_cls_ratio
     label_weights[pos_label_inds] = pos_imp_weights
 
-    bbox_targets = labels, label_weights, bbox_targets, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels
+    bbox_targets = labels, label_weights, bbox_targets, bbox_weights, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels
     return bbox_targets
 
 

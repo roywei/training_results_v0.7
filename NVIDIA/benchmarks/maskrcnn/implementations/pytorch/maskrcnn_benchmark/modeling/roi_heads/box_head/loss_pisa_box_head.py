@@ -237,8 +237,8 @@ class PISALossComputation(object):
         # Apply ISR-P
         # use default isr_p config: k=2 bias=0
         rois = torch.cat([a.bbox for a in proposals], dim=0)
-        bbox_targets = [labels, label_weights, regression_targets]
-        labels, label_weights, bbox_targets, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels = isr_p(
+        bbox_targets = [labels, label_weights, regression_targets, target_weights]
+        labels, label_weights, bbox_targets, bbox_weights, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels = isr_p(
                 class_logits,
                 box_regression,
                 bbox_targets,
@@ -246,7 +246,8 @@ class PISALossComputation(object):
                 pos_matched_idxs,
                 self.cls_loss,
                 self.box_coder,
-                num_class=80)
+                num_class=80,
+                self.decode)
         avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
@@ -271,7 +272,7 @@ class PISALossComputation(object):
             box_loss = smooth_l1_loss(
                 pos_delta_pred,
                 pos_delta_target,
-                #weight=target_weights,
+                weight=bbox_weights,
                 size_average=False,
                 beta=1,
             )
@@ -292,7 +293,7 @@ class PISALossComputation(object):
                 box_loss = self.giou_loss(
                     pos_bbox_pred,
                     target_bbox_pred,
-                    #weight=target_weights,
+                    weight=bbox_weights,
                     avg_factor=labels.numel()
                 )
             else:
