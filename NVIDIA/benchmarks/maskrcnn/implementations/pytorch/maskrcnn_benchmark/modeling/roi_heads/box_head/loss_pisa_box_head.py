@@ -173,8 +173,8 @@ class PISALossComputation(object):
                 target_weights[:num_pos, :] = 1.0
             if num_neg > 0:
                 label_weights[-num_neg:] = 1.0
-            box.add_field("label_weights", label_weights)
-            box.add_field("target_weights", target_weights)
+            box.add_field("label_weights", label_weights.float())
+            box.add_field("target_weights", target_weights.float())
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
             # box.add_field("sampled_pos_inds", pos_inds_per_image[i])
             # box.add_field("sampled_neg_inds", neg_inds_per_image[i])
@@ -252,10 +252,11 @@ class PISALossComputation(object):
                 self.cls_loss,
                 self.box_coder,
                 num_class=80)
-
+        avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
-                                            weight=bbox_targets[1]
+                                            weight=bbox_targets[1],
+                                            avg_factor=avg_factor
                                             )
 
         sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
