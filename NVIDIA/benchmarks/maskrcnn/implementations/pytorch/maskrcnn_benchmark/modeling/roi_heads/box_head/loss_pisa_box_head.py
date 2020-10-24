@@ -272,7 +272,7 @@ class PISALossComputation(object):
         # end = torch.cuda.Event(enable_timing=True)
         # start.record()
         if self.use_isr_p:
-            labels, label_weights, bbox_targets, bbox_weights = isr_p(
+            labels, label_weights, regression_targets, target_weights = isr_p(
                 class_logits,
                 bbox_inputs,
                 pos_matched_idxs,
@@ -292,7 +292,7 @@ class PISALossComputation(object):
             box_loss = smooth_l1_loss(
                 pos_box_pred_delta,
                 pos_box_target_delta,
-                weight=bbox_weights,
+                weight=target_weights,
                 size_average=False,
                 beta=1,
             )
@@ -310,7 +310,7 @@ class PISALossComputation(object):
                     smooth_l1_loss,
                     k=1,
                     bias=0.2,
-                    avg_factor=bbox_targets.size(0),
+                    avg_factor=regression_targets.size(0),
                     num_class=80)
             # end.record()
             # torch.cuda.synchronize()
@@ -320,7 +320,7 @@ class PISALossComputation(object):
                 box_loss = self.giou_loss(
                     pos_box_pred,
                     pos_box_target,
-                    weight=bbox_weights.index_select(0, pos_label_inds),
+                    weight=target_weights.index_select(0, pos_label_inds),
                     avg_factor=labels.numel()
                 )
             else:
@@ -335,7 +335,7 @@ class PISALossComputation(object):
                     self.giou_loss,
                     k=1,
                     bias=0.2,
-                    avg_factor=bbox_targets.size(0),
+                    avg_factor=regression_targets.size(0),
                     num_class=80)
 
         if self.carl:
