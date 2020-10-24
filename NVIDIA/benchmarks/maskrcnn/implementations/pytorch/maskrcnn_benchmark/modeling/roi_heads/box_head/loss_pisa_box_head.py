@@ -271,11 +271,12 @@ class PISALossComputation(object):
         # start = torch.cuda.Event(enable_timing=True)
         # end = torch.cuda.Event(enable_timing=True)
         # start.record()
-        labels, label_weights, bbox_targets, bbox_weights = isr_p(
-            class_logits,
-            bbox_inputs,
-            pos_matched_idxs,
-            self.cls_loss)
+        if self.use_isr_p:
+            labels, label_weights, bbox_targets, bbox_weights = isr_p(
+                class_logits,
+                bbox_inputs,
+                pos_matched_idxs,
+                self.cls_loss)
         # end.record()
         # torch.cuda.synchronize()
         # print("isr_p time: ", start.elapsed_time(end))
@@ -299,17 +300,18 @@ class PISALossComputation(object):
             # start = torch.cuda.Event(enable_timing=True)
             # end = torch.cuda.Event(enable_timing=True)
             # start.record()
-            loss_carl = carl_loss(
-                class_logits,
-                pos_label_inds,
-                pos_labels,
-                pos_box_pred_delta,
-                pos_box_target_delta,
-                smooth_l1_loss,
-                k=1,
-                bias=0.2,
-                avg_factor=bbox_targets.size(0),
-                num_class=80)
+            if self.carl:
+                loss_carl = carl_loss(
+                    class_logits,
+                    pos_label_inds,
+                    pos_labels,
+                    pos_box_pred_delta,
+                    pos_box_target_delta,
+                    smooth_l1_loss,
+                    k=1,
+                    bias=0.2,
+                    avg_factor=bbox_targets.size(0),
+                    num_class=80)
             # end.record()
             # torch.cuda.synchronize()
             # print("carl loss time: ", start.elapsed_time(end))
@@ -318,24 +320,28 @@ class PISALossComputation(object):
                 box_loss = self.giou_loss(
                     pos_box_pred,
                     pos_box_target,
-                    weight=bbox_weights,
+                    weight=bbox_weights.index_select(0, pos_label_inds),
                     avg_factor=labels.numel()
                 )
             else:
                 box_loss = box_regression.sum() * 0
-            loss_carl = carl_loss(
-                class_logits,
-                pos_label_inds,
-                pos_labels,
-                pos_box_pred,
-                pos_box_target,
-                self.giou_loss,
-                k=1,
-                bias=0.2,
-                avg_factor=bbox_targets.size(0),
-                num_class=80)
+            if self.carl:
+                loss_carl = carl_loss(
+                    class_logits,
+                    pos_label_inds,
+                    pos_labels,
+                    pos_box_pred,
+                    pos_box_target,
+                    self.giou_loss,
+                    k=1,
+                    bias=0.2,
+                    avg_factor=bbox_targets.size(0),
+                    num_class=80)
 
-        return classification_loss, box_loss, loss_carl
+        if self.carl:
+            return classification_loss, box_loss, loss_carl
+        else:
+            return classification_loss, box_loss
 
 
 def make_roi_box_loss_evaluator(cfg):
