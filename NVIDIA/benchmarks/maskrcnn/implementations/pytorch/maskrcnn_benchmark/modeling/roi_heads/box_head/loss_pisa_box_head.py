@@ -273,15 +273,10 @@ class PISALossComputation(object):
         # start.record()
         labels, label_weights, bbox_targets, bbox_weights = isr_p(
             class_logits,
-            box_regression,
             bbox_inputs,
-            rois,
             pos_matched_idxs,
-            self.cls_loss,
-            self.box_coder,
-            self.decode,
-            num_class=80)
-
+            self.cls_loss)
+        # end.record()
         # torch.cuda.synchronize()
         # print("isr_p time: ", start.elapsed_time(end))
 
@@ -315,6 +310,7 @@ class PISALossComputation(object):
                 bias=0.2,
                 avg_factor=bbox_targets.size(0),
                 num_class=80)
+            # end.record()
             # torch.cuda.synchronize()
             # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
