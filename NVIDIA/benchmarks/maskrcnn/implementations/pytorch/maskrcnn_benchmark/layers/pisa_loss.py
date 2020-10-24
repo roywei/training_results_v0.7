@@ -2,40 +2,28 @@ import torch
 from maskrcnn_benchmark import _C
 
 def isr_p(cls_score,
-          bbox_pred,
-          bbox_targets,
-          rois,
+          bbox_inputs,
           pos_matched_idxs,
           loss_cls,
-          bbox_coder,
           k=2,
-          bias=0,
-          num_class=80,
-          decode=False):
+          bias=0):
     """Importance-based Sample Reweighting (ISR_P), positive part.
 
     Args:
         cls_score (Tensor): Predicted classification scores.
-        bbox_pred (Tensor): Predicted bbox deltas.
-        bbox_targets (tuple[Tensor]): A tuple of bbox targets, the are
-            labels, label_weights, bbox_targets, bbox_weights respectively.
-        rois (Tensor): Anchors (single_stage) in shape (n, 4) or RoIs
-            (two_stage) in shape (n, 5).
-        pos_assigned_gt_inds (tensor): Sampling results.
+        bbox_inputs (tuple[Tensor]): A tuple of bbox targets, the are
+             labels, label_weights, bbox_targets, bbox_weights, pos_box_pred, pos_box_target,
+             pos_label_inds, pos_labels, respectively.
+        pos_matched_idxs (tensor): Sampling results.
         loss_cls (func): Classification loss func of the head.
-        bbox_coder (obj): BBox coder of the head.
         k (float): Power of the non-linear mapping.
         bias (float): Shift of the non-linear mapping.
-        num_class (int): Number of classes, default: 80.
 
     Return:
         tuple([Tensor]): labels, imp_based_label_weights, bbox_targets,
             bbox_target_weights
     """
-
-    labels, label_weights, bbox_targets, bbox_weights = bbox_targets
-    pos_label_inds = (labels > 0).nonzero().reshape(-1)
-    pos_labels = labels[pos_label_inds]
+    labels, label_weights, bbox_targets, bbox_weights, pos_box_pred, pos_box_target, pos_label_inds, pos_labels = bbox_inputs
 
     # if no positive samples, return the original targets
     num_pos = float(pos_label_inds.size(0))
@@ -54,30 +42,10 @@ def isr_p(cls_score,
     assert len(gts) == num_pos
 
     cls_score = cls_score.detach()
-    bbox_pred = bbox_pred.detach()
+    pos_box_pred = pos_box_pred.detach()
+    pos_box_target = pos_box_target.detach()
 
-    # For single stage detectors, rois here indicate anchors, in shape (N, 4)
-    # For two stage detectors, rois are in shape (N, 5)
-    if rois.size(-1) == 5:
-        pos_rois = rois[pos_label_inds][:, 1:]
-    else:
-        pos_rois = rois[pos_label_inds]
-
-    if bbox_pred.size(-1) > 4:
-        bbox_pred = bbox_pred.view(bbox_pred.size(0), -1, 4)
-        pos_delta_pred = bbox_pred[pos_label_inds, pos_labels].view(-1, 4)
-    else:
-        pos_delta_pred = bbox_pred[pos_label_inds].view(-1, 4)
-
-    # compute iou of the predicted bbox and the corresponding GT
-    pos_delta_target = bbox_targets[pos_label_inds].view(-1, 4)
-    pos_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_pred)
-    # do not decode target for giou loss
-    if not decode:
-        target_bbox_pred = bbox_coder.decode(pos_rois, pos_delta_target)
-    else:
-        target_bbox_pred = pos_delta_target
-    ious = bbox_overlaps(pos_bbox_pred, target_bbox_pred, is_aligned=True)
+    ious = bbox_overlaps(pos_box_pred, pos_box_target, is_aligned=True)
 
     pos_imp_weights = label_weights[pos_label_inds]
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
@@ -114,7 +82,7 @@ def isr_p(cls_score,
     pos_imp_weights = pos_imp_weights * pos_loss_cls_ratio
     label_weights[pos_label_inds] = pos_imp_weights
 
-    bbox_targets = labels, label_weights, bbox_targets, bbox_weights, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels
+    bbox_targets = labels, label_weights, bbox_targets, bbox_weights
     return bbox_targets
 
 

@@ -71,7 +71,7 @@ at::Tensor box_iou_cuda_aligned(at::Tensor box1, at::Tensor box2){
 
     cudaOccupancyMaxPotentialBlockSize(&minGridSize,
                                        &blockSize,
-                                       (void*) box_iou_cuda_kernel,
+                                       (void*) box_iou_aligned_cuda_kernel,
                                        0,  // dynamic memory
                                        0); // maximum utilized threads
     long num_images = box1.size(0);
