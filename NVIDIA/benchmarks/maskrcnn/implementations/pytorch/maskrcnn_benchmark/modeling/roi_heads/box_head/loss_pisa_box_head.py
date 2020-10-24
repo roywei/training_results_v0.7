@@ -1,7 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # Copyright (c) 2018-2019 NVIDIA CORPORATION. All rights reserved.
 import torch
-from torch.nn import functional as F
 
 from maskrcnn_benchmark.layers import smooth_l1_loss
 from maskrcnn_benchmark.layers import GIoULoss
@@ -17,6 +16,7 @@ from torch.nn.utils.rnn import pad_sequence
 from maskrcnn_benchmark.layers import isr_p, carl_loss
 from maskrcnn_benchmark.layers import CrossEntropyLoss
 
+
 class PISALossComputation(object):
     """
     Computes the loss for Faster R-CNN.
@@ -30,7 +30,10 @@ class PISALossComputation(object):
             box_coder,
             cls_agnostic_bbox_reg=False,
             decode=False,
-            loss="SmoothL1Loss"
+            loss="SmoothL1Loss",
+            carl=False,
+            use_isr_p=False,
+            use_isr_n=False
     ):
         """
         Arguments:
@@ -46,6 +49,9 @@ class PISALossComputation(object):
         self.cls_loss = CrossEntropyLoss()
         self.decode = decode
         self.loss = loss
+        self.carl = carl
+        self.use_isr_p = use_isr_p
+        self.use_isr_n = use_isr_n
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -90,6 +96,7 @@ class PISALossComputation(object):
             labels_per_image.masked_fill(ignore_inds, -1)  # -1 is ignored by sampler
 
             # compute regression targets
+            # does not encode target if we need to decode pred later
             if not self.decode:
                 regression_targets_per_image = self.box_coder.encode(
                     matched_targets_per_image.bbox, proposals_per_image.bbox
@@ -115,6 +122,7 @@ class PISALossComputation(object):
 
         matched_targets = targets[img_idx, matched_idxs.clamp(min=0)]
 
+        # does not encode target if we need to decode pred later
         if not self.decode:
             regression_targets = self.box_coder.encode(
                 matched_targets.view(-1, 4), proposals.view(-1, 4)
@@ -165,7 +173,6 @@ class PISALossComputation(object):
             box.add_field("matched_idxs", matched_idxs[inds])
             box.add_field("regression_targets", regression_targets[inds])
             box.add_field("labels", labels[inds])
-            # TODO: add fields label_weights and target_weights
             label_weights = labels.new_zeros(num_samples)
             target_weights = regression_targets.new_zeros(num_samples, 4)
             if num_pos > 0:
@@ -219,9 +226,7 @@ class PISALossComputation(object):
 
         pos_matched_idxs = [proposal.get_field("pos_matched_idxs") for proposal in proposals]
 
-        # get indices that correspond to the regression targets for
-        # the corresponding ground truth labels, to be used with
-        # advanced indexing
+        rois = torch.cat([a.bbox for a in proposals], dim=0)
 
         # TODO: get negative sample weights from PISA
         # if neg_label_weights[0] is not None:
@@ -234,20 +239,52 @@ class PISALossComputation(object):
         #                       num_neg] = neg_label_weights[i]
         #         cur_num_rois += num_pos + num_neg
 
+        # get indices that correspond to the regression targets for
+        # the corresponding ground truth labels, to be used with
+        # advanced indexing
+        pos_label_inds = torch.nonzero(labels > 0).squeeze(1)
+        pos_labels = labels.index_select(0, pos_label_inds)
+        if self.cls_agnostic_bbox_reg:
+            map_inds = torch.tensor([4, 5, 6, 7], device=device)
+        else:
+            map_inds = 4 * pos_labels[:, None] + torch.tensor(
+                [0, 1, 2, 3], device=device)
+
+        index_select_indices = ((pos_label_inds[:, None]) * box_regression.size(1) + map_inds).view(-1)
+        pos_box_pred_delta = box_regression.view(-1).index_select(0, index_select_indices).view(map_inds.shape[0],
+                                                                                                map_inds.shape[1])
+        pos_box_target_delta = regression_targets.index_select(0, pos_label_inds)
+        pos_rois = rois.index_select(0, pos_label_inds)
+
+        if self.loss == "GIoULoss" and self.decode:
+            # target is not encoded
+            pos_box_target = pos_box_target_delta
+        else:
+            pos_box_target = self.box_coder.decode(pos_box_target_delta, pos_rois)
+        pos_box_pred = self.box_coder.decode(pos_box_pred_delta, pos_rois)
+
         # Apply ISR-P
         # use default isr_p config: k=2 bias=0
-        rois = torch.cat([a.bbox for a in proposals], dim=0)
-        bbox_targets = [labels, label_weights, regression_targets, target_weights]
-        labels, label_weights, bbox_targets, bbox_weights, pos_delta_target, pos_delta_pred, pos_bbox_pred, target_bbox_pred, pos_label_inds, pos_labels = isr_p(
-                class_logits,
-                box_regression,
-                bbox_targets,
-                rois,
-                pos_matched_idxs,
-                self.cls_loss,
-                self.box_coder,
-                num_class=80,
-                self.decode)
+        bbox_inputs = [labels, label_weights, regression_targets, target_weights, pos_box_pred, pos_box_target,
+                       pos_label_inds, pos_labels]
+
+        # start = torch.cuda.Event(enable_timing=True)
+        # end = torch.cuda.Event(enable_timing=True)
+        # start.record()
+        labels, label_weights, bbox_targets, bbox_weights = isr_p(
+            class_logits,
+            box_regression,
+            bbox_inputs,
+            rois,
+            pos_matched_idxs,
+            self.cls_loss,
+            self.box_coder,
+            self.decode,
+            num_class=80)
+
+        # torch.cuda.synchronize()
+        # print("isr_p time: ", start.elapsed_time(end))
+
         avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
@@ -255,44 +292,36 @@ class PISALossComputation(object):
                                             avg_factor=avg_factor
                                             )
 
-        # sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
-        # labels_pos = labels.index_select(0, sampled_pos_inds_subset)
-        # if self.cls_agnostic_bbox_reg:
-        #     map_inds = torch.tensor([4, 5, 6, 7], device=device)
-        # else:
-        #     map_inds = 4 * labels_pos[:, None] + torch.tensor(
-        #         [0, 1, 2, 3], device=device)
-        #
-        # index_select_indices = ((sampled_pos_inds_subset[:, None]) * box_regression.size(1) + map_inds).view(-1)
-        # box_regression_sampled = box_regression.view(-1).index_select(0, index_select_indices).view(map_inds.shape[0],
-        #                                                                                             map_inds.shape[1])
-        # regression_targets_sampled = regression_targets.index_select(0, sampled_pos_inds_subset)
-
         if self.loss == "SmoothL1Loss":
             box_loss = smooth_l1_loss(
-                pos_delta_pred,
-                pos_delta_target,
+                pos_box_pred_delta,
+                pos_box_target_delta,
                 weight=bbox_weights,
                 size_average=False,
                 beta=1,
             )
             box_loss = box_loss / labels.numel()
+            # start = torch.cuda.Event(enable_timing=True)
+            # end = torch.cuda.Event(enable_timing=True)
+            # start.record()
             loss_carl = carl_loss(
                 class_logits,
                 pos_label_inds,
                 pos_labels,
-                pos_delta_pred,
-                pos_delta_target,
+                pos_box_pred_delta,
+                pos_box_target_delta,
                 smooth_l1_loss,
                 k=1,
                 bias=0.2,
                 avg_factor=bbox_targets.size(0),
                 num_class=80)
+            # torch.cuda.synchronize()
+            # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
-            if pos_bbox_pred.size()[0] > 0:
+            if pos_box_pred.size()[0] > 0:
                 box_loss = self.giou_loss(
-                    pos_bbox_pred,
-                    target_bbox_pred,
+                    pos_box_pred,
+                    pos_box_target,
                     weight=bbox_weights,
                     avg_factor=labels.numel()
                 )
@@ -302,8 +331,8 @@ class PISALossComputation(object):
                 class_logits,
                 pos_label_inds,
                 pos_labels,
-                pos_bbox_pred,
-                target_bbox_pred,
+                pos_box_pred,
+                pos_box_target,
                 self.giou_loss,
                 k=1,
                 bias=0.2,
@@ -336,7 +365,10 @@ def make_roi_box_loss_evaluator(cfg):
         box_coder,
         cls_agnostic_bbox_reg,
         cfg.MODEL.ROI_BOX_HEAD.DECODE,
-        cfg.MODEL.ROI_BOX_HEAD.LOSS
+        cfg.MODEL.ROI_BOX_HEAD.LOSS,
+        cfg.MODEL.ROI_BOX_HEAD.CARL,
+        cfg.MODEL.ROI_BOX_HEAD.ISR_P,
+        cfg.MODEL.ROI_BOX_HEAD.ISR_N
     )
 
     return loss_evaluator
