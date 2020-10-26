@@ -22,29 +22,21 @@
 #include <iostream>
 
 __global__ void box_iou_aligned_cuda_kernel(float *box_iou, float4 *box1, float4 *box2, long num_images, long M,
-                                    long N, int idxJump) {
+                                    int idxJump) {
 
     int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    size_t b1_idx, b2_idx, b1_row_offset, b2_row_offset, im_id, im_offset;
     float xmin1, xmin2, xmax1, xmax2, ymin1, ymin2, ymax1, ymax2;
     float x_tl, y_tl, x_br, y_br, w, h, inter, area1, area2, iou;
 
-    for (long i = idx; i < num_images * M * N; i += idxJump){
-        im_id = i / (M * N);
-        im_offset = i % (M * N);
-        b1_idx = im_offset / N;
-        b2_idx = i % N;
-        b1_row_offset = im_id * M + b1_idx;
-        b2_row_offset = im_id * N + b2_idx;
-
-        xmin1 = box1[b1_row_offset].x;
-        ymin1 = box1[b1_row_offset].y;
-        xmax1 = box1[b1_row_offset].z;
-        ymax1 = box1[b1_row_offset].w;
-        xmin2 = box2[b2_row_offset].x;
-        ymin2 = box2[b2_row_offset].y;
-        xmax2 = box2[b2_row_offset].z;
-        ymax2 = box2[b2_row_offset].w;
+    for (long i = idx; i < num_images * M; i += idxJump){
+        xmin1 = box1[i].x;
+        ymin1 = box1[i].y;
+        xmax1 = box1[i].z;
+        ymax1 = box1[i].w;
+        xmin2 = box2[i].x;
+        ymin2 = box2[i].y;
+        xmax2 = box2[i].z;
+        ymax2 = box2[i].w;
 
         x_tl = fmaxf(xmin1, xmin2);
         y_tl = fmaxf(ymin1, ymin2);
@@ -58,7 +50,7 @@ __global__ void box_iou_aligned_cuda_kernel(float *box_iou, float4 *box1, float4
         area1 = (xmax1 - xmin1 + 1) * (ymax1 - ymin1 + 1);
         area2 = (xmax2 - xmin2 + 1) * (ymax2 - ymin2 + 1);
         iou = inter / (area1 + area2 - inter);
-        box_iou[im_id * M * N + b1_idx * N + b2_idx] = iou;
+        box_iou[i] = iou;
     }
 
 }
@@ -76,8 +68,7 @@ at::Tensor box_iou_cuda_aligned(at::Tensor box1, at::Tensor box2){
                                        0); // maximum utilized threads
     long num_images = box1.size(0);
     long M = box1.size(1);
-    long N = box2.size(1);
-    auto box_iou = torch::ones({num_images, M, N}, torch::CUDA(at::kFloat));
+    auto box_iou = torch::ones({num_images, M, 1}, torch::CUDA(at::kFloat));
 
     dim3 gridDim(minGridSize);
     dim3 blockDim(blockSize);
@@ -86,7 +77,7 @@ at::Tensor box_iou_cuda_aligned(at::Tensor box1, at::Tensor box2){
     box_iou_aligned_cuda_kernel<<<gridDim, blockDim, 0, stream.stream()>>>(box_iou.data_ptr<float>(),
                                                                   (float4*) box1.data_ptr<float>(),
                                                                   (float4*) box2.data_ptr<float>(),
-                                                                  num_images, M, N,
+                                                                  num_images, M,
                                                                   idxJump);
     return box_iou;
 }
