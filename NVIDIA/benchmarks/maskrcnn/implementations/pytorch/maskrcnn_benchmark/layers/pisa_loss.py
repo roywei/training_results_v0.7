@@ -266,18 +266,17 @@ def bbox2roi(bbox_list):
 
 
 def boxlist_iou(box1, box2):
-    """Compute the intersection over union of two set of boxes.
+    """Compute the intersection over union of two set of boxes aligned.
     The box order must be (xmin, ymin, xmax, ymax).
 
     Arguments:
-      box1: (BoxList) bounding boxes, sized [N,4].
+      box1: (BoxList) bounding boxes, sized [M,4].
       box2: (BoxList) bounding boxes, sized [M,4].
 
     Returns:
-      (tensor) iou, sized [N,M].
+      (tensor) iou, sized [M].
 
     Reference:
       https://github.com/chainer/chainercv/blob/master/chainercv/utils/bbox/bbox_iou.py
     """
-    #TODO: implement is_aligned option to return [N,1]
-    return _C.box_iou_aligned(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
+    return _C.box_iou_aligned(box1.unsqueeze(0),box2.unsqueeze(0)).view(-1)
