@@ -21,6 +21,9 @@ MODEL:
     PREDICTOR: "FPNPredictor"
     DECODE: True
     LOSS: "GIoULoss"
+    CARL: True
+    ISR_P: False
+    ISR_N: False
   ROI_MASK_HEAD:
     POOLER_SCALES: (0.25, 0.125, 0.0625, 0.03125)
     FEATURE_EXTRACTOR: "MaskRCNNFPNFeatureExtractor"
