@@ -45,7 +45,7 @@ def isr_p(cls_score,
     pos_box_pred = pos_box_pred.detach()
     pos_box_target = pos_box_target.detach()
 
-    ious = bbox_overlaps(pos_box_pred, pos_box_target, is_aligned=True)
+    ious = boxlist_iou(pos_box_pred, pos_box_target)
 
     pos_imp_weights = label_weights[pos_label_inds]
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
@@ -280,4 +280,4 @@ def boxlist_iou(box1, box2):
       https://github.com/chainer/chainercv/blob/master/chainercv/utils/bbox/bbox_iou.py
     """
     #TODO: implement is_aligned option to return [N,1]
-    return _C.box_iou(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
+    return _C.box_iou_aligned(box1.unsqueeze(0),box2.unsqueeze(0)).squeeze(0)
