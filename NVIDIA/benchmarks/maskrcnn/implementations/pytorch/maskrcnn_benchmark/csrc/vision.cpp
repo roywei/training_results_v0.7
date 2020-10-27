@@ -28,7 +28,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("box_iou", &box_iou, "box_iou");
   m.def("box_iou_aligned", &box_iou_aligned, "box_iou_aligned");
   m.def("box_encode", &box_encode, "box_encode");
-  m.def("box_decode", &box_decode, "box_decode");
   m.def("match_proposals", &match_proposals, "match_proposals");
 
   m.def("nms_batched", &nms_batched, "nms_batched"); 

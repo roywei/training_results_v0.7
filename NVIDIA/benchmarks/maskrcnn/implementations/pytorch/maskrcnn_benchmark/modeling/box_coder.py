@@ -65,15 +65,14 @@ class BoxCoder(object):
         """
 
         boxes = boxes.to(rel_codes.dtype)
-        wx, wy, ww, wh = self.weights
-        if rel_codes.is_cuda and boxes.is_cuda:
-            return torch.stack(_C.box_decode(rel_codes, boxes, wx, wy, ww, wh, self.bbox_xform_clip), dim=1)
+
         TO_REMOVE = 1  # TODO remove
         widths = boxes[:, 2] - boxes[:, 0] + TO_REMOVE
         heights = boxes[:, 3] - boxes[:, 1] + TO_REMOVE
         ctr_x = boxes[:, 0] + 0.5 * widths
         ctr_y = boxes[:, 1] + 0.5 * heights
 
+        wx, wy, ww, wh = self.weights
         dx = rel_codes[:, 0::4] / wx
         dy = rel_codes[:, 1::4] / wy
         dw = rel_codes[:, 2::4] / ww

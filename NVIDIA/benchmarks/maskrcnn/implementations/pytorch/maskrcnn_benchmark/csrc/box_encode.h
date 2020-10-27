@@ -24,9 +24,4 @@ std::vector<at::Tensor> box_encode(at::Tensor boxes, at::Tensor anchors, float w
   return result;
 }
 
-std::vector<at::Tensor> box_decode(at::Tensor boxes, at::Tensor anchors, float wx, float wy, float ww, float wh, float bbox_xform_clip){
-  std::vector<at::Tensor> result = box_decode_cuda(boxes, anchors, wx, wy, ww, wh, bbox_xform_clip);
-  return result;
-}
-
 #endif
