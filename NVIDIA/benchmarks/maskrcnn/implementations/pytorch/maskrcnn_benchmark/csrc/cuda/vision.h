@@ -78,7 +78,15 @@ std::vector<at::Tensor> box_encode_cuda(at::Tensor boxes,
                                      float wx, 
                                      float wy, 
                                      float ww, 
-                                     float wh);                                       
+                                     float wh);
+
+std::vector<at::Tensor> box_decode_cuda(at::Tensor boxes,
+                                     at::Tensor anchors,
+                                     float wx,
+                                     float wy,
+                                     float ww,
+                                     float wh,
+                                     float bbox_xform_clip);
 
 at::Tensor match_proposals_cuda(at::Tensor match_quality_matrix,
                                 bool include_low_quality_matches, 
