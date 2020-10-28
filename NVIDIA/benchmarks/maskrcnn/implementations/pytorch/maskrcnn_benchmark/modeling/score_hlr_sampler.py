@@ -51,6 +51,7 @@ class ScoreHLRSampler(object):
                 pos_idx = []
                 neg_idx = []
                 matched_idxs = [matched_idxs.view(-1)]
+                batch_neg_label_weights = []
                 # there is actually only 1 iteration of this for loop, but keeping the loop for completeness
                 for matched_idxs_per_image in matched_idxs:
                     if objectness is not None:
@@ -86,7 +87,6 @@ class ScoreHLRSampler(object):
                     prop_boxes = prop_boxes.view(-1, 4)
                     neg_bboxes = prop_boxes[negative]
                     regression_targets = regression_targets.view(-1, 4)
-                    labels = matched_idxs
                     neg_proposals = []
                     for i in range(num_images):
                         box = BoxList(neg_bboxes, image_size=image_sizes[i])
@@ -120,11 +120,10 @@ class ScoreHLRSampler(object):
                              selected_bbox_pred, valid_rois)
                         pred_bboxes_with_score = torch.cat(
                             [pred_bboxes, valid_max_score[:, None]], -1)
-                        group = nms_match(pred_bboxes_with_score, self.iou_threshold)
+                        group = nms_match(pred_bboxes_with_score.float(), self.iou_threshold)
 
                         # imp: importance
                         imp = cls_score.new_zeros(num_valid)
-                        print("size of group:", len(group))
                         for g in group:
                             g_score = valid_max_score[g]
                             # g_score has already sorted
@@ -164,8 +163,8 @@ class ScoreHLRSampler(object):
                     )
                     neg_idx_per_image_mask.index_fill_(0, neg_idx_per_image, 1)
                     neg_idx.append(neg_idx_per_image_mask)
-
-                    return pos_idx, neg_idx, neg_label_weights
+                    batch_neg_label_weights.append(neg_label_weights)
+                    return pos_idx, neg_idx, batch_neg_label_weights
 
             ## this implements a batched random subsampling using a tensor of random numbers and sorting
             else:

@@ -155,16 +155,16 @@ class PISALossComputation(object):
         labels, regression_targets, matched_idxs = self.prepare_targets_batched(prop_boxes, target_boxes, target_labels)
 
         # scores is used as a mask, -1 means box is invalid
-        if num_images == 1:
-            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
+        # if num_images == 1:
+        sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
             # when num_images=1, sampled pos inds only has 1 item, so avoid copy in torch.cat
-            pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
-            neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
-        else:
-            sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0,
-                                                                                                      objectness=prop_scores)
-            pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
-            neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
+        pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
+        neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
+        # else:
+        #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0,
+        #                                                                                               objectness=prop_scores)
+        #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
+        #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
         prop_boxes = prop_boxes.view(-1, 4)
         regression_targets = regression_targets.view(-1, 4)
         labels = labels.view(-1)
@@ -191,7 +191,7 @@ class PISALossComputation(object):
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
             box.add_field("num_pos", num_pos)
             box.add_field("num_neg", num_neg)
-            box.add_field("neg_label_weights", neg_label_weights)
+            box.add_field("neg_label_weights", neg_label_weights[i])
             result_proposals.append(box)
         self._proposals = result_proposals
 
