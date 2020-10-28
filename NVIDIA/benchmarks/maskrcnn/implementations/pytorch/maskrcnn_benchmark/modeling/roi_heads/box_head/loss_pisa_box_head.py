@@ -277,11 +277,15 @@ class PISALossComputation(object):
                 bbox_inputs,
                 pos_matched_idxs,
                 self.cls_loss)
+            avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
+        else:
+            label_weights = None
+            target_weights = None
+            avg_factor = labels.size(0)
         # end.record()
         # torch.cuda.synchronize()
         # print("isr_p time: ", start.elapsed_time(end))
 
-        avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
                                             weight=label_weights,
@@ -317,10 +321,12 @@ class PISALossComputation(object):
             # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
             if pos_box_pred.size()[0] > 0:
+                if target_weights:
+                    target_weights = target_weights.index_select(0, pos_label_inds)
                 box_loss = self.giou_loss(
                     pos_box_pred,
                     pos_box_target,
-                    weight=target_weights.index_select(0, pos_label_inds),
+                    weight=target_weights,
                     avg_factor=labels.numel()
                 )
             else:
