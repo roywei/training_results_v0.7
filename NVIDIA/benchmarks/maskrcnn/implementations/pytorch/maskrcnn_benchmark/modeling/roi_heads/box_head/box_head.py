@@ -19,6 +19,7 @@ class ROIBoxHead(torch.nn.Module):
         self.predictor = make_roi_box_predictor(cfg)
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
+        self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
 
     def forward(self, features, proposals, targets=None):
         """
@@ -39,7 +40,7 @@ class ROIBoxHead(torch.nn.Module):
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
-                proposals = self.loss_evaluator.subsample(proposals, targets, features, self.feature_extractor, self.predictor)
+                proposals = self.loss_evaluator.subsample(proposals, targets, features)
 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
