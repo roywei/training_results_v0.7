@@ -11,6 +11,9 @@ from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou, boxlist_iou_b
 from maskrcnn_benchmark.modeling.balanced_positive_negative_sampler import (
     BalancedPositiveNegativeSampler
 )
+from maskrcnn_benchmark.modeling.score_hlr_sampler import (
+    ScoreHLRSampler
+)
 from maskrcnn_benchmark.modeling.utils import cat
 from torch.nn.utils.rnn import pad_sequence
 from maskrcnn_benchmark.layers import isr_p, carl_loss
@@ -131,7 +134,7 @@ class PISALossComputation(object):
             regression_targets = matched_targets.view(-1, 4)
         return labels, regression_targets.view(num_images, -1, 4), matched_idxs
 
-    def subsample(self, proposals, targets):
+    def subsample(self, proposals, targets, features, feature_extractor, predictor):
         """
         This method performs the positive/negative sampling, and return
         the sampled proposals.
@@ -150,12 +153,12 @@ class PISALossComputation(object):
 
         # scores is used as a mask, -1 means box is invalid
         if num_images == 1:
-            sampled_pos_inds, sampled_neg_inds = self.fg_bg_sampler(labels, is_rpn=0, objectness=prop_scores)
+            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, feature_extractor, predictor, self.box_coder, is_rpn=0, objectness=prop_scores)
             # when num_images=1, sampled pos inds only has 1 item, so avoid copy in torch.cat
             pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
             neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
         else:
-            sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples = self.fg_bg_sampler(labels, is_rpn=0,
+            sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, feature_extractor, predictor, self.box_coder, is_rpn=0,
                                                                                                       objectness=prop_scores)
             pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
             neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
@@ -183,6 +186,9 @@ class PISALossComputation(object):
             box.add_field("label_weights", label_weights.float())
             box.add_field("target_weights", target_weights.float())
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
+            box.add_field("num_pos", num_pos)
+            box.add_field("num_neg", num_pos)
+            box.add_field("neg_label_weights", neg_label_weights)
             result_proposals.append(box)
         self._proposals = result_proposals
 
@@ -229,15 +235,14 @@ class PISALossComputation(object):
         rois = torch.cat([a.bbox for a in proposals], dim=0)
 
         # TODO: get negative sample weights from PISA
-        # if neg_label_weights[0] is not None:
-        #     label_weights = bbox_targets[1]
-        #     cur_num_rois = 0
-        #     for i in range(len(sampling_results)):
-        #         num_pos = sampling_results[i].pos_inds.size(0)
-        #         num_neg = sampling_results[i].neg_inds.size(0)
-        #         label_weights[cur_num_rois + num_pos:cur_num_rois + num_pos +
-        #                       num_neg] = neg_label_weights[i]
-        #         cur_num_rois += num_pos + num_neg
+        if self.neg_label_weights[0] is not None:
+            cur_num_rois = 0
+            for i in range(len(self._proposals)):
+                num_pos = self._proposals[i].get_field("num_pos")
+                num_neg = self._proposals[i].get_field("num_neg")
+                label_weights[cur_num_rois + num_pos:cur_num_rois + num_pos +
+                              num_neg] = self._proposals[i].get_field("neg_label_weights")
+                cur_num_rois += num_pos + num_neg
 
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
@@ -355,7 +360,12 @@ def make_roi_box_loss_evaluator(cfg):
     box_coder = BoxCoder(weights=bbox_reg_weights)
 
     # TODO: add pisa sampler
+    #if cfg.MODEL.ROI_HEADS.SAM
     fg_bg_sampler = BalancedPositiveNegativeSampler(
+        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
+    )
+
+    fg_bg_sampler = ScoreHLRSampler(
         cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
     )
 

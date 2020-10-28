@@ -1,2 +1,3 @@
 opencv-python==3.4.1.15
 yacs
+mmcv-full
