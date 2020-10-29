@@ -50,6 +50,7 @@ class ScoreHLRSampler(object):
             if num_images == 1:
                 pos_idx = []
                 neg_idx = []
+                neg_label_weights_batched = []
                 matched_idxs = [matched_idxs.view(-1)]
                 # there is actually only 1 iteration of this for loop, but keeping the loop for completeness
                 for matched_idxs_per_image in matched_idxs:
@@ -123,7 +124,6 @@ class ScoreHLRSampler(object):
 
                         # imp: importance
                         imp = cls_score.new_zeros(num_valid)
-                        print("size of group:", len(group))
                         for g in group:
                             g_score = valid_max_score[g]
                             # g_score has already sorted
@@ -163,8 +163,9 @@ class ScoreHLRSampler(object):
                     )
                     neg_idx_per_image_mask.index_fill_(0, neg_idx_per_image, 1)
                     neg_idx.append(neg_idx_per_image_mask)
+                    neg_label_weights_batched.append(neg_label_weights)
 
-                return pos_idx, neg_idx, neg_label_weights
+                return pos_idx, neg_idx, neg_label_weights_batched
 
             else:
                 pos_idx = []

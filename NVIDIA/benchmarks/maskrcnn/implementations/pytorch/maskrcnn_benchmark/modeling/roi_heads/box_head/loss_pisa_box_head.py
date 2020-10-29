@@ -166,12 +166,13 @@ class PISALossComputation(object):
             sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
             pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
             neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
+            assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
+
         # else:
         #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0,
         #                                                                                               objectness=prop_scores)
         #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
         #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
-        assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
         prop_boxes = prop_boxes.view(-1, 4)
         regression_targets = regression_targets.view(-1, 4)
         labels = labels.view(-1)
