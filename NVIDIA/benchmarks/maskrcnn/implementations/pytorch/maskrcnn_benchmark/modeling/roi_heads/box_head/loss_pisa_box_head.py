@@ -154,25 +154,44 @@ class PISALossComputation(object):
         prop_boxes, prop_scores, image_sizes = proposals[0], proposals[1], proposals[2]
         labels, regression_targets, matched_idxs = self.prepare_targets_batched(prop_boxes, target_boxes, target_labels)
 
-        # scores is used as a mask, -1 means box is invalid
-        if num_images == 1:
-            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
-                                                                                       prop_boxes, image_sizes,
-                                                                                       features, self.box_coder,
-                                                                                       is_rpn=0, objectness=prop_scores)
-            pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
-            neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
+        neg_label_weights = []
+        if self.use_isr_n:
+            # random sampler
+            if num_images == 1:
+                sampled_pos_inds, sampled_neg_inds = self.fg_bg_sampler(labels, is_rpn=0, objectness=prop_scores)
+                # when num_images=1, sampled pos inds only has 1 item, so avoid copy in torch.cat
+                pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
+                neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
+            else:
+                sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples = self.fg_bg_sampler(labels, is_rpn=0,
+                                                                                                          objectness=prop_scores)
+                pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
+                neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
         else:
-            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
-            pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
-            neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
-            assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
+            # pisa score hlr sampler
+            if num_images == 1:
+                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
+                                                                                           prop_boxes, image_sizes,
+                                                                                           features, self.box_coder,
+                                                                                           is_rpn=0, objectness=prop_scores)
+                pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
+                neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
+            else:
+                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
+                                                                                           prop_boxes, image_sizes,
+                                                                                           features, self.box_coder,
+                                                                                           is_rpn=0, objectness=prop_scores)
+                pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
+                neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
+                assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
+            # batched not supported for now
+            # else:
+            #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights =
+            #       self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes,
+            #                          features, self.box_coder, is_rpn=0, objectness=prop_scores)
+            #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
+            #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
 
-        # else:
-        #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0,
-        #                                                                                               objectness=prop_scores)
-        #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
-        #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
         prop_boxes = prop_boxes.view(-1, 4)
         regression_targets = regression_targets.view(-1, 4)
         labels = labels.view(-1)
@@ -199,7 +218,8 @@ class PISALossComputation(object):
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
             box.add_field("num_pos", num_pos)
             box.add_field("num_neg", num_neg)
-            box.add_field("neg_label_weights", neg_label_weights[i])
+            if not neg_label_weights:
+                box.add_field("neg_label_weights", neg_label_weights[i])
             result_proposals.append(box)
         self._proposals = result_proposals
 
@@ -246,7 +266,7 @@ class PISALossComputation(object):
         rois = torch.cat([a.bbox for a in proposals], dim=0)
 
         # TODO: get negative sample weights from PISA
-        if self._proposals[0].has_field("neg_label_weights"):
+        if self.use_isr_n and self._proposals[0].has_field("neg_label_weights"):
             cur_num_rois = 0
             for i in range(len(self._proposals)):
                 num_pos = self._proposals[i].get_field("num_pos")
@@ -296,8 +316,13 @@ class PISALossComputation(object):
         # end.record()
         # torch.cuda.synchronize()
         # print("isr_p time: ", start.elapsed_time(end))
+        if self.use_isr_n or self.use_isr_p:
+            avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
+        else:
+            label_weights = None
+            target_weights = None
+            avg_factor = labels.size(0)
 
-        avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         classification_loss = self.cls_loss(class_logits,
                                             labels,
                                             weight=label_weights,
@@ -333,10 +358,12 @@ class PISALossComputation(object):
             # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
             if pos_box_pred.size()[0] > 0:
+                if target_weights:
+                    target_weights = target_weights.index_select(0, pos_label_inds)
                 box_loss = self.giou_loss(
                     pos_box_pred,
                     pos_box_target,
-                    weight=target_weights.index_select(0, pos_label_inds),
+                    weight=target_weights,
                     avg_factor=labels.numel()
                 )
             else:
@@ -371,14 +398,14 @@ def make_roi_box_loss_evaluator(cfg):
     box_coder = BoxCoder(weights=bbox_reg_weights)
 
     # TODO: add pisa sampler
-    #if cfg.MODEL.ROI_HEADS.SAM
-    fg_bg_sampler = BalancedPositiveNegativeSampler(
-        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
-    )
-
-    fg_bg_sampler = ScoreHLRSampler(
-        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
-    )
+    if cfg.MODEL.ROI_BOX_HEAD.ISR_N:
+        fg_bg_sampler = ScoreHLRSampler(
+            cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
+        )
+    else:
+        fg_bg_sampler = BalancedPositiveNegativeSampler(
+            cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
+        )
 
     cls_agnostic_bbox_reg = cfg.MODEL.CLS_AGNOSTIC_BBOX_REG
 
