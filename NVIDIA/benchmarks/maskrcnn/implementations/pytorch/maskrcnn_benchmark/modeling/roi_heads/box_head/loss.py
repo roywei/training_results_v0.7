@@ -28,7 +28,8 @@ class FastRCNNLossComputation(object):
         box_coder, 
         cls_agnostic_bbox_reg=False,
         decode=False,
-        loss="SmoothL1Loss"
+        loss="SmoothL1Loss",
+        giou_box_weight=10.0
     ):
         """
         Arguments:
@@ -40,7 +41,7 @@ class FastRCNNLossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
-        self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=10.0)
+        self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=giou_box_weight)
         self.decode = decode
         self.loss = loss
 
@@ -256,7 +257,8 @@ def make_roi_box_loss_evaluator(cfg):
         box_coder, 
         cls_agnostic_bbox_reg,
         cfg.MODEL.ROI_BOX_HEAD.DECODE,
-        cfg.MODEL.ROI_BOX_HEAD.LOSS
+        cfg.MODEL.ROI_BOX_HEAD.LOSS,
+        cfg.MODEL.ROI_BOX_HEAD.GIOU_BOX_WEIGHT
     )
 
     return loss_evaluator

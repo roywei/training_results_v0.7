@@ -36,7 +36,9 @@ class PISALossComputation(object):
             loss="SmoothL1Loss",
             carl=False,
             use_isr_p=False,
-            use_isr_n=False
+            use_isr_n=False,
+            giou_box_weight=10.0,
+            giou_carl_weight=10.0
     ):
         """
         Arguments:
@@ -48,8 +50,8 @@ class PISALossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
-        self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=10.0)
-        self.giou_loss_carl = GIoULoss(eps=1e-6, reduction="none", loss_weight=1.0)
+        self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=giou_box_weight)
+        self.giou_loss_carl = GIoULoss(eps=1e-6, reduction="none", loss_weight=giou_carl_weight)
         self.cls_loss = CrossEntropyLoss()
         self.decode = decode
         self.loss = loss
@@ -420,7 +422,9 @@ def make_roi_box_loss_evaluator(cfg):
         cfg.MODEL.ROI_BOX_HEAD.LOSS,
         cfg.MODEL.ROI_BOX_HEAD.CARL,
         cfg.MODEL.ROI_BOX_HEAD.ISR_P,
-        cfg.MODEL.ROI_BOX_HEAD.ISR_N
+        cfg.MODEL.ROI_BOX_HEAD.ISR_N,
+        cfg.MODEL.ROI_BOX_HEAD.GIOU_BOX_WEIGHT,
+        cfg.MODEL.ROI_BOX_HEAD.GIOU_CARL_WEIGHT
     )
 
     return loss_evaluator
