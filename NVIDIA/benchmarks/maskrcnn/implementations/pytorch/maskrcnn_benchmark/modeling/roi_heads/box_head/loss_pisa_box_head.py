@@ -155,11 +155,17 @@ class PISALossComputation(object):
         labels, regression_targets, matched_idxs = self.prepare_targets_batched(prop_boxes, target_boxes, target_labels)
 
         # scores is used as a mask, -1 means box is invalid
-        # if num_images == 1:
-        sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
-            # when num_images=1, sampled pos inds only has 1 item, so avoid copy in torch.cat
-        pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
-        neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
+        if num_images == 1:
+            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
+                                                                                       prop_boxes, image_sizes,
+                                                                                       features, self.box_coder,
+                                                                                       is_rpn=0, objectness=prop_scores)
+            pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
+            neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
+        else:
+            sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0, objectness=prop_scores)
+            pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
+            neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
         # else:
         #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights = self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes, features, self.box_coder, is_rpn=0,
         #                                                                                               objectness=prop_scores)
