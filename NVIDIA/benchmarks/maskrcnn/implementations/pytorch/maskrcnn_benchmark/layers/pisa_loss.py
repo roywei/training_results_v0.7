@@ -134,7 +134,8 @@ def carl_loss(cls_score,
 
     ori_loss_reg = loss_bbox(
         bbox_pred,
-        bbox_targets) / avg_factor
+        bbox_targets,
+        reduction_override='none') / avg_factor
     loss_carl = (ori_loss_reg * carl_loss_weights[:, None]).sum()
     return loss_carl[None]
 

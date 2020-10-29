@@ -49,6 +49,7 @@ class PISALossComputation(object):
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         self.giou_loss = GIoULoss(eps=1e-6, reduction="mean", loss_weight=10.0)
+        self.giou_loss_carl = GIoULoss(eps=1e-6, reduction="none", loss_weight=1.0)
         self.cls_loss = CrossEntropyLoss()
         self.decode = decode
         self.loss = loss
@@ -135,7 +136,8 @@ class PISALossComputation(object):
         return labels, regression_targets.view(num_images, -1, 4), matched_idxs
 
     def set_model(self, feature_extractor, predictor):
-        self.fg_bg_sampler.set_model(feature_extractor, predictor)
+        if isinstance(self.fg_bg_sampler, ScoreHLRSampler):
+            self.fg_bg_sampler.set_model(feature_extractor, predictor)
 
     def subsample(self, proposals, targets, features):
         """
@@ -155,7 +157,7 @@ class PISALossComputation(object):
         labels, regression_targets, matched_idxs = self.prepare_targets_batched(prop_boxes, target_boxes, target_labels)
 
         neg_label_weights = []
-        if self.use_isr_n:
+        if not self.use_isr_n:
             # random sampler
             if num_images == 1:
                 sampled_pos_inds, sampled_neg_inds = self.fg_bg_sampler(labels, is_rpn=0, objectness=prop_scores)
@@ -218,7 +220,7 @@ class PISALossComputation(object):
             box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
             box.add_field("num_pos", num_pos)
             box.add_field("num_neg", num_neg)
-            if not neg_label_weights:
+            if neg_label_weights:
                 box.add_field("neg_label_weights", neg_label_weights[i])
             result_proposals.append(box)
         self._proposals = result_proposals
@@ -358,7 +360,7 @@ class PISALossComputation(object):
             # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
             if pos_box_pred.size()[0] > 0:
-                if target_weights:
+                if target_weights is not None:
                     target_weights = target_weights.index_select(0, pos_label_inds)
                 box_loss = self.giou_loss(
                     pos_box_pred,
@@ -375,7 +377,7 @@ class PISALossComputation(object):
                     pos_labels,
                     pos_box_pred,
                     pos_box_target,
-                    self.giou_loss,
+                    self.giou_loss_carl,
                     k=1,
                     bias=0.2,
                     avg_factor=regression_targets.size(0),
