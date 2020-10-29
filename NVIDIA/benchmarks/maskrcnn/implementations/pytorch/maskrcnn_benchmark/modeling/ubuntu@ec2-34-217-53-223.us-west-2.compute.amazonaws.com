@@ -47,14 +47,14 @@ class ScoreHLRSampler(object):
         """
         num_images = len(matched_idxs)
         with torch.no_grad():
-            if num_images > 0:
+            if num_images == 1:
                 pos_idx = []
                 neg_idx = []
                 #matched_idxs = [matched_idxs.view(-1)]
                 batch_neg_label_weights = []
                 # there is actually only 1 iteration of this for loop, but keeping the loop for completeness
                 for i in range(num_images):
-                    matched_idxs_per_image = matched_idxs[i]
+                    matched_idxs_per_image = matched_idxs[i].unsqueeze(1)
 
                     # if objectness is not None:
                     #     objectness = objectness.view(-1)
@@ -90,11 +90,12 @@ class ScoreHLRSampler(object):
                     neg_box = prop_box[negative]
                     regression_target = regression_targets[i].unsqueeze(1).view(-1, 4)
                     neg_proposals = []
-                    box = BoxList(neg_box, image_size=image_sizes[i])
-                    box.add_field("matched_idxs", matched_idxs_per_image[negative])
-                    box.add_field("regression_targets", regression_target[negative])
-                    box.add_field("labels", matched_idxs_per_image[negative])
-                    neg_proposals.append(box)
+                    for i in range(num_images):
+                        box = BoxList(neg_box, image_size=image_sizes[i])
+                        box.add_field("matched_idxs", matched_idxs_per_image[negative])
+                        box.add_field("regression_targets", regression_target[negative])
+                        box.add_field("labels", matched_idxs_per_image[negative])
+                        neg_proposals.append(box)
                     x = self.feature_extractor(features, neg_proposals)
                     cls_score, box_regression = self.predictor(x)
                     classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 81), reduction="none")

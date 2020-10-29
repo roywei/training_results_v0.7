@@ -165,6 +165,7 @@ class PISALossComputation(object):
         #                                                                                               objectness=prop_scores)
         #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
         #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
+        assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
         prop_boxes = prop_boxes.view(-1, 4)
         regression_targets = regression_targets.view(-1, 4)
         labels = labels.view(-1)
