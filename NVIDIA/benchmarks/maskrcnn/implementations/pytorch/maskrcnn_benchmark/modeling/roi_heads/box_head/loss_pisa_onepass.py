@@ -61,9 +61,9 @@ class PISALossOnePassComputation(object):
         self.carl = carl
         self.use_isr_p = use_isr_p
         self.use_isr_n = use_isr_n
-        self.k = k,
-        self.bias = bias,
-        self.score_threshold = score_threshold,
+        self.k = k
+        self.bias = bias
+        self.score_threshold = score_threshold
         self.iou_threshold = iou_threshold
         self.batch_size_per_image = batch_size_per_image
 
@@ -202,8 +202,7 @@ class PISALossOnePassComputation(object):
 
         # isr_n results
         sampled_inds_batched = []
-        sampled_neg_inds_batched = []
-        neg_label_weights_batched = []
+        sampled_pos_inds_batched = []
         label_weights_batched = []
         box_weights_batched = []
         for i in range(num_images):
@@ -225,7 +224,7 @@ class PISALossOnePassComputation(object):
                 # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
                 original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 81), reduction="none")
 
-                max_score, argmax_score = original_neg_class_loss.softmax(-1)[:, :-1].max(-1)
+                max_score, argmax_score = class_logits.softmax(-1)[:, :-1].max(-1)
                 valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
                 invalid_inds = (max_score <= self.score_threshold).nonzero().view(-1)
                 num_valid = valid_inds.size(0)
@@ -273,31 +272,27 @@ class PISALossOnePassComputation(object):
                     neg_label_weights[:num_hlr] = imp_weights
                     neg_label_weights[num_hlr:] = imp_weights.min()
                     neg_label_weights = (self.bias +
-                                         (1 - self.bias) * neg_label_weight).pow(self.k)
+                                         (1 - self.bias) * neg_label_weights).pow(self.k)
                     ori_selected_loss = original_neg_class_loss[select_inds]
-                    new_loss = ori_selected_loss * neg_label_weight
+                    new_loss = ori_selected_loss * neg_label_weights
                     norm_ratio = ori_selected_loss.sum() / new_loss.sum()
                     if torch.isnan(norm_ratio) or norm_ratio.eq(float('inf')):
                         norm_ratio = 1.0
-                    neg_label_weight *= norm_ratio
+                    neg_label_weights *= norm_ratio
                 else:
-                    neg_label_weight = original_neg_class_loss.new_ones(num_neg_expected)
+                    neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
                     select_inds = torch.randperm(num_neg)[:num_neg_expected]
-                    neg_label_weights.append(neg_label_weight)
 
                 sampled_neg_inds = neg_inds[select_inds]
-                sampled_inds = torch.cat(sampled_pos_inds, sampled_neg_inds)
+                sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
+                sampled_pos_inds_batched.append(sampled_pos_inds)
                 sampled_inds_batched.append(sampled_inds)
-                label_weights_batched.append(torch.cat(sampled_pos_inds.new_ones(num_pos), neg_label_weights))
+                label_weights_batched.append(torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0))
                 box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
                 box_weights[sampled_pos_inds] = 1.0
                 box_weights_batched.append(box_weights)
 
-        return torch.cat(sampled_neg_inds_batched, dim=0), \
-               torch.cat(sampled_inds_batched, dim=0), \
-               torch.cat(neg_label_weights_batched, dim=0), \
-               torch.cat(label_weights_batched, dim=0), \
-               torch.cat(box_weights_batched, dim=0)
+        return sampled_inds_batched, sampled_pos_inds_batched, label_weights_batched, box_weights_batched
 
     def __call__(self, class_logits, box_regression):
         """
@@ -316,8 +311,10 @@ class PISALossOnePassComputation(object):
             raise RuntimeError("subsample needs to be called before")
 
         # apply isr_n with batched inputs
-        sampled_neg_inds, sampled_inds, neg_label_weights, label_weights, box_weights = self.isr_n(class_logits,
-                                                                                                   box_regression)
+        sampled_inds_batched, sampled_pos_inds_batched, label_weights_batched, box_weights_batched = self.isr_n(class_logits, box_regression)
+        sampled_inds = torch.cat(sampled_inds_batched, dim=0)
+        label_weights = torch.cat(label_weights_batched, dim=0)
+        box_weights = torch.cat(box_weights_batched, dim=0)
 
         class_logits = cat(class_logits, dim=0)
         box_regression = cat(box_regression, dim=0)
@@ -370,18 +367,26 @@ class PISALossOnePassComputation(object):
         bbox_inputs = [labels, label_weights, regression_targets, box_weights, pos_box_pred, pos_box_target,
                        pos_label_inds, pos_labels]
 
+        gts = list()
+        last_max_gt = 0
+        for i in range(len(proposals)):
+            gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds_batched[i]]
+            gts.append(gt_i + last_max_gt)
+            if len(gt_i) != 0:
+                last_max_gt = gt_i.max() + 1
+        gts = torch.cat(gts)
         if self.use_isr_p:
             labels, label_weights, regression_targets, box_weights = isr_p(
                 class_logits,
                 bbox_inputs,
-                matched_idxs[pos_label_inds],
+                gts,
                 self.cls_loss)
 
         if self.use_isr_n or self.use_isr_p:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
         else:
             label_weights = None
-            target_weights = None
+            box_weights = None
             avg_factor = labels.size(0)
 
         classification_loss = self.cls_loss(class_logits,

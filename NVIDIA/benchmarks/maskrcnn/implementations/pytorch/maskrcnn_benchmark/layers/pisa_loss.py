@@ -3,7 +3,7 @@ from maskrcnn_benchmark import _C
 
 def isr_p(cls_score,
           bbox_inputs,
-          pos_matched_idxs,
+          gts,
           loss_cls,
           k=2,
           bias=0):
@@ -31,14 +31,14 @@ def isr_p(cls_score,
         return labels, label_weights, bbox_targets, bbox_weights
 
     # merge pos_assigned_gt_inds of per image to a single tensor
-    gts = list()
-    last_max_gt = 0
-    for i in range(len(pos_matched_idxs)):
-        gt_i = pos_matched_idxs[i]
-        gts.append(gt_i + last_max_gt)
-        if len(gt_i) != 0:
-            last_max_gt = gt_i.max() + 1
-    gts = torch.cat(gts)
+    # gts = list()
+    # last_max_gt = 0
+    # for i in range(len(pos_matched_idxs)):
+    #     gt_i = pos_matched_idxs[i]
+    #     gts.append(gt_i + last_max_gt)
+    #     if len(gt_i) != 0:
+    #         last_max_gt = gt_i.max() + 1
+    # gts = torch.cat(gts)
     assert len(gts) == num_pos
 
     cls_score = cls_score.detach()
