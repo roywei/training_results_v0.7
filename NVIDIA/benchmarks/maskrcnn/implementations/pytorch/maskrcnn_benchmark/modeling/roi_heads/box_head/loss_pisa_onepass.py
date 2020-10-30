@@ -196,6 +196,9 @@ class PISALossOnePassComputation(object):
         labels_batched = [proposal.get_field("labels") for proposal in proposals]
         rois_batched = [a.bbox for a in proposals]
         regression_targets_batched = [proposal.get_field("regression_targets") for proposal in proposals]
+        batch_sizes = [item.size(0) for item in labels_batched]
+        class_logits_batched = class_logits_batched[0].split(batch_sizes)
+        box_regression_batched = box_regression_batched[0].split(batch_sizes)
 
         # isr_n results
         sampled_inds_batched = []
@@ -220,7 +223,7 @@ class PISALossOnePassComputation(object):
             with torch.no_grad():
                 neg_class_logits = class_logits.index_select(0, neg_inds)
                 # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
-                original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 81))
+                original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 81), reduction="none")
 
                 max_score, argmax_score = original_neg_class_loss.softmax(-1)[:, :-1].max(-1)
                 valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
