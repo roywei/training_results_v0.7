@@ -286,7 +286,7 @@ class PISALossOnePassComputation(object):
                     neg_label_weights[num_hlr:] = imp_weights.min()
                     neg_label_weights = (self.bias +
                                          (1 - self.bias) * neg_label_weights).pow(self.k)
-                    ori_selected_loss = original_neg_class_loss[select_inds]
+                    ori_selected_loss = original_neg_class_loss[select_inds.to(neg_inds.device)]
                     new_loss = ori_selected_loss * neg_label_weights
                     norm_ratio = ori_selected_loss.sum() / new_loss.sum()
                     if torch.isnan(norm_ratio) or norm_ratio.eq(float('inf')):
@@ -296,7 +296,7 @@ class PISALossOnePassComputation(object):
                     neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
                     select_inds = torch.randperm(num_neg)[:num_neg_expected]
 
-                sampled_neg_inds = neg_inds[select_inds]
+                sampled_neg_inds = neg_inds[select_inds.to(neg_inds.device)]
                 sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
                 sampled_pos_inds_batched.append(sampled_pos_inds)
                 sampled_inds_batched.append(sampled_inds)
@@ -378,11 +378,13 @@ class PISALossOnePassComputation(object):
             labels, label_weights, regression_targets, box_weights = isr_p(
                 class_logits,
                 bbox_inputs,
-                gts,
+                torch.cat(gts, dim=0),
                 self.cls_loss)
 
         if self.use_isr_n or self.use_isr_p:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
+            box_weights = box_weights.float()
+            label_weights = label_weights.float()
         else:
             label_weights = None
             box_weights = None
@@ -396,8 +398,8 @@ class PISALossOnePassComputation(object):
 
         if self.loss == "SmoothL1Loss":
             box_loss = smooth_l1_loss(
-                pos_box_pred_delta,
-                pos_box_target_delta,
+                pos_box_pred_delta.float(),
+                pos_box_target_delta.float(),
                 weight=box_weights,
                 size_average=False,
                 beta=1,
@@ -426,8 +428,8 @@ class PISALossOnePassComputation(object):
                 if box_weights is not None:
                     box_weights = box_weights.index_select(0, pos_label_inds)
                 box_loss = self.giou_loss(
-                    pos_box_pred,
-                    pos_box_target,
+                    pos_box_pred.float(),
+                    pos_box_target.float(),
                     weight=box_weights,
                     avg_factor=labels.numel()
                 )
