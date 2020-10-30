@@ -209,6 +209,7 @@ class PISALossOnePassComputation(object):
         sampled_rois_batched = []
         sampled_regression_targets_batched = []
         sampled_box_regression_batched = []
+        sampled_class_logits_batched = []
 
         # gts for isr_p
         gts = []
@@ -219,7 +220,7 @@ class PISALossOnePassComputation(object):
             box_regression = box_regression_batched[i]
             labels = labels_batched[i]
             rois = rois_batched[i]
-            regression_targets =  regression_targets_batched[i]
+            regression_targets = regression_targets_batched[i]
 
             sampled_pos_inds = torch.nonzero(labels > 0).squeeze(1)
             num_pos = sampled_pos_inds.size(0)
@@ -297,11 +298,12 @@ class PISALossOnePassComputation(object):
 
                 sampled_neg_inds = neg_inds[select_inds]
                 sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
-                # sampled_pos_inds_batched.append(sampled_pos_inds)
-                # sampled_inds_batched.append(sampled_inds)
+                sampled_pos_inds_batched.append(sampled_pos_inds)
+                sampled_inds_batched.append(sampled_inds)
                 sampled_labels_batched.append(labels[sampled_inds])
                 sampled_regression_targets_batched.append(regression_targets[sampled_inds])
                 sampled_box_regression_batched.append(box_regression[sampled_inds])
+                sampled_class_logits_batched.append(class_logits[sampled_inds])
                 sampled_rois_batched.append(rois[sampled_inds])
                 label_weights_batched.append(torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0))
                 box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
@@ -313,7 +315,8 @@ class PISALossOnePassComputation(object):
                     last_max_gt = gt_i.max() + 1
 
         return sampled_labels_batched, sampled_regression_targets_batched, \
-               sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, box_weights_batched, gts
+               sampled_class_logits_batched, sampled_box_regression_batched, \
+               sampled_rois_batched, label_weights_batched, box_weights_batched, gts, sampled_pos_inds_batched
 
     def __call__(self, class_logits, box_regression):
         """
@@ -332,20 +335,19 @@ class PISALossOnePassComputation(object):
             raise RuntimeError("subsample needs to be called before")
 
         # apply isr_n with batched inputs
-        sampled_labels_batched, sampled_regression_targets_batched, \
-        sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, box_weights_batched, gts = self.isr_n(class_logits, box_regression)
+        sampled_labels_batched, sampled_regression_targets_batched, sampled_class_logits_batched, \
+        sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, \
+        box_weights_batched, gts, sampled_pos_inds_batched = self.isr_n(class_logits, box_regression)
         labels = torch.cat(sampled_labels_batched, dim=0)
+        class_logits = cat(sampled_class_logits_batched, dim=0)
         box_regression = torch.cat(sampled_box_regression_batched, dim=0)
         regression_targets = torch.cat(sampled_regression_targets_batched, dim=0)
         rois = torch.cat(sampled_rois_batched, dim=0)
         label_weights = torch.cat(label_weights_batched, dim=0)
         box_weights = torch.cat(box_weights_batched, dim=0)
-
-        class_logits = cat(class_logits, dim=0)
-        box_regression = cat(box_regression, dim=0)
         device = class_logits.device
 
-        pos_label_inds = torch.nonzero(labels > 0).squeeze(1)
+        pos_label_inds = torch.cat(sampled_pos_inds_batched, dim=0)
         pos_labels = labels.index_select(0, pos_label_inds)
         if self.cls_agnostic_bbox_reg:
             map_inds = torch.tensor([4, 5, 6, 7], device=device)
