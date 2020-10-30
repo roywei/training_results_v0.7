@@ -81,6 +81,8 @@ class ScoreHLRSampler(object):
                     pos_idx_per_image_mask.index_fill_(0, pos_idx_per_image, 1)
 
                     pos_idx.append(pos_idx_per_image_mask)
+                    if num_neg == 0:
+                        return pos_idx, neg_idx, []
 
                     # run forward with all negative boxes to get scores
                     prop_boxes = prop_boxes.view(-1, 4)

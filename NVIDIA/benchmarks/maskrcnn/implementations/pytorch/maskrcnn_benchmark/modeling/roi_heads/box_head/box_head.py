@@ -5,8 +5,7 @@ from torch import nn
 from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
-from .loss_pisa_box_head import make_roi_box_loss_evaluator
-
+from .loss_pisa_onepass import make_roi_box_loss_evaluator
 
 class ROIBoxHead(torch.nn.Module):
     """
