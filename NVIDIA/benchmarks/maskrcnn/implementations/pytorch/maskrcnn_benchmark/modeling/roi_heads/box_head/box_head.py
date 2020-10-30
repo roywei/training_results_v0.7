@@ -6,6 +6,7 @@ from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
 from .loss_pisa_onepass import make_roi_box_loss_evaluator
+from .loss_pisa_box_head import PISALossComputation
 
 class ROIBoxHead(torch.nn.Module):
     """
@@ -18,7 +19,8 @@ class ROIBoxHead(torch.nn.Module):
         self.predictor = make_roi_box_predictor(cfg)
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
-        self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
+        if isinstance(self.loss_evaluator, PISALossComputation):
+            self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
 
     def forward(self, features, proposals, targets=None):
         """
