@@ -205,11 +205,21 @@ class PISALossOnePassComputation(object):
         sampled_pos_inds_batched = []
         label_weights_batched = []
         box_weights_batched = []
+        sampled_labels_batched = []
+        sampled_rois_batched = []
+        sampled_regression_targets_batched = []
+        sampled_box_regression_batched = []
+
+        # gts for isr_p
+        gts = []
+        last_max_gt = 0
+
         for i in range(num_images):
             class_logits = class_logits_batched[i]
             box_regression = box_regression_batched[i]
             labels = labels_batched[i]
             rois = rois_batched[i]
+            regression_targets =  regression_targets_batched[i]
 
             sampled_pos_inds = torch.nonzero(labels > 0).squeeze(1)
             num_pos = sampled_pos_inds.size(0)
@@ -218,6 +228,8 @@ class PISALossOnePassComputation(object):
             neg_rois = rois.index_select(0, neg_inds)
             neg_box_regression = box_regression.index_select(0, neg_inds)
             num_neg = neg_inds.size(0)
+
+
             # PISA isr_n neg sampling
             with torch.no_grad():
                 neg_class_logits = class_logits.index_select(0, neg_inds)
@@ -285,14 +297,23 @@ class PISALossOnePassComputation(object):
 
                 sampled_neg_inds = neg_inds[select_inds]
                 sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
-                sampled_pos_inds_batched.append(sampled_pos_inds)
-                sampled_inds_batched.append(sampled_inds)
+                # sampled_pos_inds_batched.append(sampled_pos_inds)
+                # sampled_inds_batched.append(sampled_inds)
+                sampled_labels_batched.append(labels[sampled_inds])
+                sampled_regression_targets_batched.append(regression_targets[sampled_inds])
+                sampled_box_regression_batched.append(box_regression[sampled_inds])
+                sampled_rois_batched.append(rois[sampled_inds])
                 label_weights_batched.append(torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0))
                 box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
                 box_weights[sampled_pos_inds] = 1.0
                 box_weights_batched.append(box_weights)
+                gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds]
+                gts.append(gt_i + last_max_gt)
+                if len(gt_i) != 0:
+                    last_max_gt = gt_i.max() + 1
 
-        return sampled_inds_batched, sampled_pos_inds_batched, label_weights_batched, box_weights_batched
+        return sampled_labels_batched, sampled_regression_targets_batched, \
+               sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, box_weights_batched, gts
 
     def __call__(self, class_logits, box_regression):
         """
@@ -311,8 +332,12 @@ class PISALossOnePassComputation(object):
             raise RuntimeError("subsample needs to be called before")
 
         # apply isr_n with batched inputs
-        sampled_inds_batched, sampled_pos_inds_batched, label_weights_batched, box_weights_batched = self.isr_n(class_logits, box_regression)
-        sampled_inds = torch.cat(sampled_inds_batched, dim=0)
+        sampled_labels_batched, sampled_regression_targets_batched, \
+        sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, box_weights_batched, gts = self.isr_n(class_logits, box_regression)
+        labels = torch.cat(sampled_labels_batched, dim=0)
+        box_regression = torch.cat(sampled_box_regression_batched, dim=0)
+        regression_targets = torch.cat(sampled_regression_targets_batched, dim=0)
+        rois = torch.cat(sampled_rois_batched, dim=0)
         label_weights = torch.cat(label_weights_batched, dim=0)
         box_weights = torch.cat(box_weights_batched, dim=0)
 
@@ -320,27 +345,6 @@ class PISALossOnePassComputation(object):
         box_regression = cat(box_regression, dim=0)
         device = class_logits.device
 
-        proposals = self._proposals
-
-        # pos inds and unsampled neg inds
-        labels = cat([proposal.get_field("labels") for proposal in proposals], dim=0)
-        regression_targets = cat(
-            [proposal.get_field("regression_targets") for proposal in proposals], dim=0
-        )
-        rois = torch.cat([a.bbox for a in proposals], dim=0)
-        matched_idxs = cat(
-            [proposal.get_field("matched_idxs") for proposal in proposals], dim=0
-        )
-
-        # re-sampled inputs with pos and neg inds
-        rois = rois[sampled_inds]
-        box_regression = box_regression[sampled_inds]
-        regression_targets = regression_targets[sampled_inds]
-        class_logits = class_logits[sampled_inds]
-        labels = labels[sampled_inds]
-        matched_idxs = matched_idxs[sampled_inds]
-
-        # re-select pos labels and inds
         pos_label_inds = torch.nonzero(labels > 0).squeeze(1)
         pos_labels = labels.index_select(0, pos_label_inds)
         if self.cls_agnostic_bbox_reg:
@@ -367,14 +371,7 @@ class PISALossOnePassComputation(object):
         bbox_inputs = [labels, label_weights, regression_targets, box_weights, pos_box_pred, pos_box_target,
                        pos_label_inds, pos_labels]
 
-        gts = list()
-        last_max_gt = 0
-        for i in range(len(proposals)):
-            gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds_batched[i]]
-            gts.append(gt_i + last_max_gt)
-            if len(gt_i) != 0:
-                last_max_gt = gt_i.max() + 1
-        gts = torch.cat(gts)
+
         if self.use_isr_p:
             labels, label_weights, regression_targets, box_weights = isr_p(
                 class_logits,
