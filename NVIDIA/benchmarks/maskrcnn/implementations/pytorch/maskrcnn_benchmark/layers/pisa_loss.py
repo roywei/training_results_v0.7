@@ -70,7 +70,7 @@ def isr_p(cls_score,
 
     # normalize to make the new weighted loss value equal to the original loss
     pos_loss_cls = loss_cls(
-        cls_score[pos_label_inds], pos_labels)
+        cls_score[pos_label_inds], pos_labels, reduction_override="none")
     if pos_loss_cls.dim() > 1:
         ori_pos_loss_cls = pos_loss_cls * label_weights[pos_label_inds][:,
                                                                         None]

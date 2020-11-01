@@ -229,83 +229,89 @@ class PISALossOnePassComputation(object):
             neg_rois = rois.index_select(0, neg_inds)
             neg_box_regression = box_regression.index_select(0, neg_inds)
             num_neg = neg_inds.size(0)
+            if num_neg == 0:
+                sampled_neg_inds = neg_inds
+                neg_label_weights = []
+            else:
+                # PISA isr_n neg sampling
+                with torch.no_grad():
+                    neg_class_logits = class_logits.index_select(0, neg_inds)
+                    # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
+                    original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0), reduction="none")
 
+                    max_score, argmax_score = neg_class_logits.softmax(-1)[:, :-1].max(-1)
+                    valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
+                    invalid_inds = (max_score <= self.score_threshold).nonzero().view(-1)
+                    num_valid = valid_inds.size(0)
+                    num_invalid = invalid_inds.size(0)
+                    num_neg_expected = self.batch_size_per_image - num_pos
+                    num_neg_expected = min(num_neg, num_neg_expected)
+                    num_hlr = min(num_valid, num_neg_expected)
+                    num_rand = num_neg_expected - num_hlr
+                    if num_valid > 0:
+                        valid_rois = neg_rois[valid_inds]
+                        valid_max_score = max_score[valid_inds]
+                        valid_argmax_score = argmax_score[valid_inds]
+                        valid_bbox_pred = neg_box_regression[valid_inds]
 
-            # PISA isr_n neg sampling
-            with torch.no_grad():
-                neg_class_logits = class_logits.index_select(0, neg_inds)
-                # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
-                original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0), reduction="none")
+                        # valid_bbox_pred shape: [num_valid, #num_classes, 4]
+                        valid_bbox_pred = valid_bbox_pred.view(valid_bbox_pred.size(0), -1, 4)
+                        selected_bbox_pred = valid_bbox_pred[range(num_valid), valid_argmax_score]
+                        pred_bboxes = self.box_coder.decode(selected_bbox_pred, valid_rois)
+                        pred_bboxes_with_score = torch.cat([pred_bboxes, valid_max_score[:, None]], -1)
+                        group = nms_match(pred_bboxes_with_score.float(), self.iou_threshold)
 
-                max_score, argmax_score = class_logits.softmax(-1)[:, :-1].max(-1)
-                valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
-                invalid_inds = (max_score <= self.score_threshold).nonzero().view(-1)
-                num_valid = valid_inds.size(0)
-                num_invalid = invalid_inds.size(0)
-                num_neg_expected = self.batch_size_per_image - num_pos
-                num_neg_expected = min(num_neg, num_neg_expected)
-                num_hlr = min(num_valid, num_neg_expected)
-                num_rand = num_neg_expected - num_hlr
-                if num_valid > 0:
-                    valid_rois = neg_rois[valid_inds]
-                    valid_max_score = max_score[valid_inds]
-                    valid_argmax_score = argmax_score[valid_inds]
-                    valid_bbox_pred = neg_box_regression[valid_inds]
+                        # imp: importance
+                        imp = original_neg_class_loss.new_zeros(num_valid)
+                        for g in group:
+                            g_score = valid_max_score[g]
+                            # g_score has already sorted
+                            rank = g_score.new_tensor(range(g_score.size(0)))
+                            imp[g] = num_valid - rank + g_score
+                        _, imp_rank_inds = imp.sort(descending=True)
+                        _, imp_rank = imp_rank_inds.sort()
+                        hlr_inds = imp_rank_inds[:num_neg_expected]
 
-                    # valid_bbox_pred shape: [num_valid, #num_classes, 4]
-                    valid_bbox_pred = valid_bbox_pred.view(valid_bbox_pred.size(0), -1, 4)
-                    selected_bbox_pred = valid_bbox_pred[range(num_valid), valid_argmax_score]
-                    pred_bboxes = self.box_coder.decode(selected_bbox_pred, valid_rois)
-                    pred_bboxes_with_score = torch.cat([pred_bboxes, valid_max_score[:, None]], -1)
-                    group = nms_match(pred_bboxes_with_score.float(), self.iou_threshold)
+                        if num_rand > 0:
+                            rand_inds = torch.randperm(num_invalid)[:num_rand]
+                            select_inds = torch.cat(
+                                [valid_inds[hlr_inds], invalid_inds[rand_inds]])
+                        else:
+                            select_inds = valid_inds[hlr_inds]
 
-                    # imp: importance
-                    imp = original_neg_class_loss.new_zeros(num_valid)
-                    for g in group:
-                        g_score = valid_max_score[g]
-                        # g_score has already sorted
-                        rank = g_score.new_tensor(range(g_score.size(0)))
-                        imp[g] = num_valid - rank + g_score
-                    _, imp_rank_inds = imp.sort(descending=True)
-                    _, imp_rank = imp_rank_inds.sort()
-                    hlr_inds = imp_rank_inds[:num_neg_expected]
+                        neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
 
-                    if num_rand > 0:
-                        rand_inds = torch.randperm(num_invalid)[:num_rand]
-                        select_inds = torch.cat(
-                            [valid_inds[hlr_inds], invalid_inds[rand_inds]])
+                        up_bound = max(num_neg_expected, num_valid)
+                        imp_weights = (up_bound -
+                                       imp_rank[hlr_inds].float()) / up_bound
+                        neg_label_weights[:num_hlr] = imp_weights
+                        neg_label_weights[num_hlr:] = imp_weights.min()
+                        neg_label_weights = (self.bias +
+                                             (1 - self.bias) * neg_label_weights).pow(self.k)
+                        ori_selected_loss = original_neg_class_loss[select_inds.to(neg_inds.device)]
+                        new_loss = ori_selected_loss * neg_label_weights
+                        norm_ratio = ori_selected_loss.sum() / new_loss.sum()
+                        if torch.isnan(norm_ratio) or norm_ratio.eq(float('inf')):
+                            norm_ratio = 1.0
+                        neg_label_weights *= norm_ratio
                     else:
-                        select_inds = valid_inds[hlr_inds]
+                        neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
+                        select_inds = torch.randperm(num_neg)[:num_neg_expected]
 
-                    neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
-
-                    up_bound = max(num_neg_expected, num_valid)
-                    imp_weights = (up_bound -
-                                   imp_rank[hlr_inds].float()) / up_bound
-                    neg_label_weights[:num_hlr] = imp_weights
-                    neg_label_weights[num_hlr:] = imp_weights.min()
-                    neg_label_weights = (self.bias +
-                                         (1 - self.bias) * neg_label_weights).pow(self.k)
-                    ori_selected_loss = original_neg_class_loss[select_inds.to(neg_inds.device)]
-                    new_loss = ori_selected_loss * neg_label_weights
-                    norm_ratio = ori_selected_loss.sum() / new_loss.sum()
-                    if torch.isnan(norm_ratio) or norm_ratio.eq(float('inf')):
-                        norm_ratio = 1.0
-                    neg_label_weights *= norm_ratio
-                else:
-                    neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
-                    select_inds = torch.randperm(num_neg)[:num_neg_expected]
-
-                sampled_neg_inds = neg_inds[select_inds.to(neg_inds.device)]
+                    sampled_neg_inds = neg_inds[select_inds.to(neg_inds.device)]
                 sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
-                sampled_pos_inds_batched.append(sampled_pos_inds)
+                sampled_pos_inds_batched.append(torch.nonzero(labels[sampled_inds]>0).view(-1))
                 sampled_inds_batched.append(sampled_inds)
                 sampled_labels_batched.append(labels[sampled_inds])
                 sampled_regression_targets_batched.append(regression_targets[sampled_inds])
                 sampled_box_regression_batched.append(box_regression[sampled_inds])
                 sampled_class_logits_batched.append(class_logits[sampled_inds])
                 sampled_rois_batched.append(rois[sampled_inds])
-                label_weights_batched.append(torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0))
+                if num_neg == 0:
+                    label_weights = sampled_pos_inds.new_ones(num_pos)
+                else:
+                    label_weights = torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0)
+                label_weights_batched.append(label_weights)
                 box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
                 box_weights[sampled_pos_inds] = 1.0
                 box_weights_batched.append(box_weights)

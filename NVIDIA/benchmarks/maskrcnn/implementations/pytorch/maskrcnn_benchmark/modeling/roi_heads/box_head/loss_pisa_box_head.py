@@ -219,7 +219,7 @@ class PISALossComputation(object):
                 label_weights[-num_neg:] = 1.0
             box.add_field("label_weights", label_weights.float())
             box.add_field("target_weights", target_weights.float())
-            box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]] - 1)
+            box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]])
             box.add_field("num_pos", num_pos)
             box.add_field("num_neg", num_neg)
             if neg_label_weights:
