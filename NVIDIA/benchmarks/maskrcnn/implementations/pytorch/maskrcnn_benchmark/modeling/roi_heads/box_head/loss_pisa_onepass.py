@@ -299,26 +299,26 @@ class PISALossOnePassComputation(object):
                         select_inds = torch.randperm(num_neg)[:num_neg_expected]
 
                     sampled_neg_inds = neg_inds[select_inds.to(neg_inds.device)]
-                sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
-                sampled_pos_inds_batched.append(torch.nonzero(labels[sampled_inds]>0).view(-1))
-                sampled_inds_batched.append(sampled_inds)
-                sampled_labels_batched.append(labels[sampled_inds])
-                sampled_regression_targets_batched.append(regression_targets[sampled_inds])
-                sampled_box_regression_batched.append(box_regression[sampled_inds])
-                sampled_class_logits_batched.append(class_logits[sampled_inds])
-                sampled_rois_batched.append(rois[sampled_inds])
-                if num_neg == 0:
-                    label_weights = sampled_pos_inds.new_ones(num_pos)
-                else:
-                    label_weights = torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0)
-                label_weights_batched.append(label_weights)
-                box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
-                box_weights[sampled_pos_inds] = 1.0
-                box_weights_batched.append(box_weights)
-                gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds]
-                gts.append(gt_i + last_max_gt)
-                if len(gt_i) != 0:
-                    last_max_gt = gt_i.max() + 1
+            sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
+            sampled_pos_inds_batched.append(torch.nonzero(labels[sampled_inds]>0).view(-1))
+            sampled_inds_batched.append(sampled_inds)
+            sampled_labels_batched.append(labels[sampled_inds])
+            sampled_regression_targets_batched.append(regression_targets[sampled_inds])
+            sampled_box_regression_batched.append(box_regression[sampled_inds])
+            sampled_class_logits_batched.append(class_logits[sampled_inds])
+            sampled_rois_batched.append(rois[sampled_inds])
+            if num_neg == 0:
+                label_weights = sampled_pos_inds.new_ones(num_pos)
+            else:
+                label_weights = torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0)
+            label_weights_batched.append(label_weights)
+            box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
+            box_weights[sampled_pos_inds] = 1.0
+            box_weights_batched.append(box_weights)
+            gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds]
+            gts.append(gt_i + last_max_gt)
+            if len(gt_i) != 0:
+                last_max_gt = gt_i.max() + 1
 
         return sampled_labels_batched, sampled_regression_targets_batched, \
                sampled_class_logits_batched, sampled_box_regression_batched, \
