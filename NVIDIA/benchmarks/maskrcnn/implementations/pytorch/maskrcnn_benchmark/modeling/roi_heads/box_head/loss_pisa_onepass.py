@@ -37,11 +37,11 @@ class PISALossOnePassComputation(object):
             use_isr_n=False,
             giou_box_weight=10.0,
             giou_carl_weight=10.0,
+            batch_size_per_image=512,
             k=0.5,
             bias=0,
             score_threshold=0.05,
-            iou_threshold=0.5,
-            batch_size_per_image=512
+            iou_threshold=0.5
     ):
         """
         Arguments:
@@ -489,7 +489,11 @@ def make_roi_box_loss_evaluator(cfg):
         cfg.MODEL.ROI_BOX_HEAD.ISR_N,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_BOX_WEIGHT,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_CARL_WEIGHT,
-        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE
+        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE,
+        cfg.MODEL.ROI_HEADS.K,
+        cfg.MODEL.ROI_HEADS.BIAS,
+        cfg.MODEL.ROI_HEADS.SCORE_THRESHOLD,
+        cfg.MODEL.ROI_HEADS.IOU_THRESHOLD
     )
 
     return loss_evaluator
