@@ -291,8 +291,6 @@ class PISALossOnePassComputation(object):
                         ori_selected_loss = original_neg_class_loss[select_inds.to(neg_inds.device)]
                         new_loss = ori_selected_loss * neg_label_weights
                         norm_ratio = ori_selected_loss.sum() / new_loss.sum()
-                        if torch.isnan(norm_ratio) or norm_ratio.eq(float('inf')):
-                            norm_ratio = 1.0
                         neg_label_weights *= norm_ratio
                     else:
                         neg_label_weights = original_neg_class_loss.new_ones(num_neg_expected)
