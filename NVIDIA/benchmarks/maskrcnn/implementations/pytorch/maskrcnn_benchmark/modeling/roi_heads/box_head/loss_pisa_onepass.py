@@ -235,7 +235,7 @@ class PISALossOnePassComputation(object):
             with torch.no_grad():
                 neg_class_logits = class_logits.index_select(0, neg_inds)
                 # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
-                original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 81), reduction="none")
+                original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0), reduction="none")
 
                 max_score, argmax_score = class_logits.softmax(-1)[:, :-1].max(-1)
                 valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
