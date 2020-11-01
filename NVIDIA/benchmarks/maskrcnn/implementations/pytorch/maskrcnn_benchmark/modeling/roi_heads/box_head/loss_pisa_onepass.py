@@ -300,8 +300,8 @@ class PISALossOnePassComputation(object):
 
                     sampled_neg_inds = neg_inds[select_inds.to(neg_inds.device)]
             sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
-            sampled_pos_inds_batched.append(torch.nonzero(labels[sampled_inds]>0).view(-1))
-            sampled_inds_batched.append(sampled_inds)
+            # sampled_pos_inds_batched.append(torch.nonzero(labels[sampled_inds]>0).view(-1))
+            # sampled_inds_batched.append(sampled_inds)
             sampled_labels_batched.append(labels[sampled_inds])
             sampled_regression_targets_batched.append(regression_targets[sampled_inds])
             sampled_box_regression_batched.append(box_regression[sampled_inds])
@@ -353,7 +353,7 @@ class PISALossOnePassComputation(object):
         box_weights = torch.cat(box_weights_batched, dim=0)
         device = class_logits.device
 
-        pos_label_inds = torch.cat(sampled_pos_inds_batched, dim=0)
+        pos_label_inds = torch.nonzero(labels > 0).squeeze(1)
         pos_labels = labels.index_select(0, pos_label_inds)
         if self.cls_agnostic_bbox_reg:
             map_inds = torch.tensor([4, 5, 6, 7], device=device)
@@ -424,8 +424,7 @@ class PISALossOnePassComputation(object):
                     smooth_l1_loss,
                     k=1,
                     bias=0.2,
-                    avg_factor=regression_targets.size(0),
-                    num_class=80)
+                    avg_factor=regression_targets.size(0))
             # end.record()
             # torch.cuda.synchronize()
             # print("carl loss time: ", start.elapsed_time(end))
@@ -451,8 +450,7 @@ class PISALossOnePassComputation(object):
                     self.giou_loss_carl,
                     k=1,
                     bias=0.2,
-                    avg_factor=regression_targets.size(0),
-                    num_class=80)
+                    avg_factor=regression_targets.size(0))
 
         if self.carl:
             return classification_loss, box_loss, loss_carl

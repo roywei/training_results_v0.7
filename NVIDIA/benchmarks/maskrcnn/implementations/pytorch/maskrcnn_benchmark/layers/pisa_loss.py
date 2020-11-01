@@ -95,8 +95,7 @@ def carl_loss(cls_score,
               k=1,
               bias=0.2,
               avg_factor=None,
-              sigmoid=False,
-              num_class=80):
+              sigmoid=False):
     """Classification-Aware Regression Loss (CARL).
 
     Args:
@@ -110,7 +109,6 @@ def carl_loss(cls_score,
         bias (float): Shift of the non-linear mapping.
         avg_factor (int): Average factor used in regression loss.
         sigmoid (bool): Activation of the classification score.
-        num_class (int): Number of classes, default: 80.
 
     Return:
         dict: CARL loss dict.
@@ -136,8 +134,8 @@ def carl_loss(cls_score,
         bbox_pred,
         bbox_targets,
         reduction_override='none') / avg_factor
-    loss_carl = (ori_loss_reg * carl_loss_weights[:, None]).sum()
-    return loss_carl[None]
+    loss_carl = (ori_loss_reg * carl_loss_weights).sum()
+    return loss_carl
 
 
 def bbox_overlaps(bboxes1, bboxes2, mode='iou', is_aligned=False, eps=1e-6):
