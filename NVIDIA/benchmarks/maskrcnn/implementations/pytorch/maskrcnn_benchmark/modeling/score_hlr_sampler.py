@@ -95,7 +95,7 @@ class ScoreHLRSampler(object):
                         neg_proposals.append(box)
                     x = self.feature_extractor(features, neg_proposals)
                     cls_score, box_regression = self.predictor(x)
-                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 81),
+                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 0),
                                                           reduction="none")
                     max_score, argmax_score = cls_score.softmax(-1)[:, :-1].max(-1)
                     valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
@@ -176,13 +176,13 @@ class ScoreHLRSampler(object):
                 for i in range(num_images):
                     matched_idxs_per_image = matched_idxs[i]
 
-                    # if objectness is not None:
-                    #     objectness = objectness.view(-1)
-                    #     positive = torch.nonzero((matched_idxs_per_image >= 1) * (objectness > -1)).squeeze(1)
-                    #     negative = torch.nonzero((matched_idxs_per_image == 0) * (objectness > -1)).squeeze(1)
-                    # else:
-                    positive = torch.nonzero(matched_idxs_per_image >= 1).squeeze(1)
-                    negative = torch.nonzero(matched_idxs_per_image == 0).squeeze(1)
+                    if objectness is not None:
+                        objectness = objectness.view(-1)
+                        positive = torch.nonzero((matched_idxs_per_image >= 1) * (objectness > -1)).squeeze(1)
+                        negative = torch.nonzero((matched_idxs_per_image == 0) * (objectness > -1)).squeeze(1)
+                    else:
+                        positive = torch.nonzero(matched_idxs_per_image >= 1).squeeze(1)
+                        negative = torch.nonzero(matched_idxs_per_image == 0).squeeze(1)
 
                     num_pos = int(self.batch_size_per_image * self.positive_fraction)
                     # protect against not enough positive examples

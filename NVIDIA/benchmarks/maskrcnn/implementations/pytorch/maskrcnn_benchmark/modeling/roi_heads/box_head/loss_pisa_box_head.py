@@ -224,6 +224,7 @@ class PISALossComputation(object):
             box.add_field("num_neg", num_neg)
             if neg_label_weights:
                 box.add_field("neg_label_weights", neg_label_weights[i])
+            box.add_field("pos_inds", pos_inds_per_image[i])
             result_proposals.append(box)
         self._proposals = result_proposals
 
@@ -282,7 +283,7 @@ class PISALossComputation(object):
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
         # advanced indexing
-        pos_label_inds = torch.nonzero(labels > 0).squeeze(1)
+        pos_label_inds = torch.cat([proposal.get_field("pos_inds") for proposal in proposals], dim=0)
         pos_labels = labels.index_select(0, pos_label_inds)
         if self.cls_agnostic_bbox_reg:
             map_inds = torch.tensor([4, 5, 6, 7], device=device)
