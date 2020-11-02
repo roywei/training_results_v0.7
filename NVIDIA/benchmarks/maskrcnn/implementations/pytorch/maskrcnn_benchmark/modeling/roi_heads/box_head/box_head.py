@@ -5,8 +5,8 @@ from torch import nn
 from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
-from .loss_pisa_onepass import make_roi_box_loss_evaluator
-from .loss_pisa_box_head import PISALossComputation
+from .loss_pisa_onepass import make_roi_box_loss_evaluator as make_pisa_loss_onepass
+from .loss_pisa_box_head import make_roi_box_loss_evaluator
 
 class ROIBoxHead(torch.nn.Module):
     """
@@ -18,9 +18,13 @@ class ROIBoxHead(torch.nn.Module):
         self.feature_extractor = make_roi_box_feature_extractor(cfg)
         self.predictor = make_roi_box_predictor(cfg)
         self.post_processor = make_roi_box_post_processor(cfg)
-        self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
-        if isinstance(self.loss_evaluator, PISALossComputation):
+        if cfg.MODEL.ROI_HEADS.PISA_ONEPASS:
+            self.loss_evaluator = make_pisa_loss_onepass(cfg)
+            self.one_pass = True
+        else:
+            self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
             self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
+            self.one_pass = False
 
     def forward(self, features, proposals, targets=None):
         """
@@ -56,15 +60,20 @@ class ROIBoxHead(torch.nn.Module):
         results = self.loss_evaluator(
             [class_logits.float()], [box_regression.float()]
         )
-        x = self.feature_extractor(features, self.loss_evaluator._proposals)
+        if self.one_pass:
+            x = self.feature_extractor(features, self.loss_evaluator._proposals)
 
         if len(results) > 2:
             loss_dict = dict(loss_classifier=results[0], loss_box_reg=results[1], loss_carl=results[2])
         else:
             loss_dict = dict(loss_classifier=results[0], loss_box_reg=results[1])
+
+        if self.one_pass:
+            proposals = self.loss_evaluator._proposals
+
         return (
             x,
-            self.loss_evaluator._proposals,
+            proposals,
             loss_dict,
         )
 

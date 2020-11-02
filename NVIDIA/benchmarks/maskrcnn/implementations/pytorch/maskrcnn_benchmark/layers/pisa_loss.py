@@ -47,7 +47,7 @@ def isr_p(cls_score,
 
     ious = boxlist_iou(pos_box_pred, pos_box_target)
 
-    pos_imp_weights = label_weights[pos_label_inds]
+    pos_imp_weights = label_weights[pos_label_inds].float()
     # Two steps to compute IoU-HLR. Samples are first sorted by IoU locally,
     # then sorted again within the same-rank group
     max_l_num = pos_labels.bincount().max()
@@ -64,7 +64,7 @@ def isr_p(cls_score,
         _, l_iou_rank_idx = l_ious.sort(descending=True)
         _, l_iou_rank = l_iou_rank_idx.sort()  # IoU-HLR
         # linearly map HLR to label weights
-        pos_imp_weights[l_inds] *= (max_l_num - l_iou_rank).float() / max_l_num
+        pos_imp_weights[l_inds] *= (max_l_num - l_iou_rank).float() / max_l_num.float()
 
     pos_imp_weights = (bias + pos_imp_weights * (1 - bias)).pow(k)
 

@@ -197,8 +197,8 @@ class PISALossOnePassComputation(object):
         rois_batched = [a.bbox for a in proposals]
         regression_targets_batched = [proposal.get_field("regression_targets") for proposal in proposals]
         batch_sizes = [item.size(0) for item in labels_batched]
-        class_logits_batched = class_logits_batched[0].float().split(batch_sizes)
-        box_regression_batched = box_regression_batched[0].float().split(batch_sizes)
+        class_logits_batched = class_logits_batched[0].split(batch_sizes)
+        box_regression_batched = box_regression_batched[0].split(batch_sizes)
 
         # isr_n results
         sampled_inds_batched = []

@@ -97,7 +97,7 @@ class ScoreHLRSampler(object):
                         neg_proposals.append(box)
                     x = self.feature_extractor(features, neg_proposals)
                     cls_score, box_regression = self.predictor(x)
-                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 81),
+                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 0),
                                                           reduction="none")
                     max_score, argmax_score = cls_score.softmax(-1)[:, :-1].max(-1)
                     valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
