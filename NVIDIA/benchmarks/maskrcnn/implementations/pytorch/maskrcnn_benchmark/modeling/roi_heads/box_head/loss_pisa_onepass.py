@@ -464,7 +464,7 @@ class PISALossOnePassComputation(object):
                     avg_factor=regression_targets.size(0))
 
         if self.carl:
-            return classification_loss, box_loss, loss_carl,
+            return classification_loss, box_loss, loss_carl
         else:
             return classification_loss, box_loss
 

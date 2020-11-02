@@ -24,6 +24,7 @@ def isr_p(cls_score,
             bbox_target_weights
     """
     labels, label_weights, bbox_targets, bbox_weights, pos_box_pred, pos_box_target, pos_label_inds, pos_labels = bbox_inputs
+    label_weights = label_weights.float()
 
     # if no positive samples, return the original targets
     num_pos = float(pos_label_inds.size(0))

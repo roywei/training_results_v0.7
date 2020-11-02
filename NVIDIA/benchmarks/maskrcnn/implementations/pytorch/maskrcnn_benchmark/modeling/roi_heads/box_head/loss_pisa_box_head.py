@@ -174,14 +174,14 @@ class PISALossComputation(object):
         else:
             # pisa score hlr sampler
             if num_images == 1:
-                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
+                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, matched_idxs, regression_targets,
                                                                                            prop_boxes, image_sizes,
                                                                                            features, self.box_coder,
                                                                                            is_rpn=0, objectness=prop_scores)
                 pos_inds_per_image = [torch.nonzero(sampled_pos_inds[0]).squeeze(1)]
                 neg_inds_per_image = [torch.nonzero(sampled_neg_inds[0]).squeeze(1)]
             else:
-                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, regression_targets,
+                sampled_pos_inds, sampled_neg_inds, neg_label_weights = self.fg_bg_sampler(labels, matched_idxs, regression_targets,
                                                                                            prop_boxes, image_sizes,
                                                                                            features, self.box_coder,
                                                                                            is_rpn=0, objectness=prop_scores)
@@ -210,20 +210,17 @@ class PISALossComputation(object):
             box.add_field("matched_idxs", matched_idxs[inds])
             box.add_field("regression_targets", regression_targets[inds])
             box.add_field("labels", labels[inds])
-            label_weights = labels.new_zeros(num_samples)
-            target_weights = regression_targets.new_zeros(num_samples, 4)
+            label_weights = labels.new_ones(num_samples).float()
+            target_weights = regression_targets.new_zeros(num_samples, 4).float()
             if num_pos > 0:
-                label_weights[:num_pos] = 1.0
                 target_weights[:num_pos, :] = 1.0
             if num_neg > 0:
-                label_weights[-num_neg:] = 1.0
-            box.add_field("label_weights", label_weights.float())
-            box.add_field("target_weights", target_weights.float())
-            box.add_field("pos_matched_idxs", matched_idxs[pos_inds_per_image[i]])
-            box.add_field("num_pos", num_pos)
-            box.add_field("num_neg", num_neg)
-            if neg_label_weights:
-                box.add_field("neg_label_weights", neg_label_weights[i])
+                if neg_label_weights:
+                    label_weights[-num_neg:] = neg_label_weights[i]
+                else:
+                    label_weights[-num_neg:] = 1.0
+            box.add_field("label_weights", label_weights)
+            box.add_field("target_weights", target_weights)
             result_proposals.append(box)
         self._proposals = result_proposals
 
@@ -265,19 +262,9 @@ class PISALossComputation(object):
             [proposal.get_field("target_weights") for proposal in proposals], dim=0
         )
 
-        pos_matched_idxs = [proposal.get_field("pos_matched_idxs") for proposal in proposals]
+        matched_idxs = cat([proposal.get_field("matched_idxs") for proposal in proposals], dim=0)
 
         rois = torch.cat([a.bbox for a in proposals], dim=0)
-
-        # TODO: get negative sample weights from PISA
-        if self.use_isr_n and self._proposals[0].has_field("neg_label_weights"):
-            cur_num_rois = 0
-            for i in range(len(self._proposals)):
-                num_pos = self._proposals[i].get_field("num_pos")
-                num_neg = self._proposals[i].get_field("num_neg")
-                label_weights[cur_num_rois + num_pos:cur_num_rois + num_pos +
-                              num_neg] = self._proposals[i].get_field("neg_label_weights")
-                cur_num_rois += num_pos + num_neg
 
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
@@ -315,16 +302,18 @@ class PISALossComputation(object):
             labels, label_weights, regression_targets, target_weights = isr_p(
                 class_logits,
                 bbox_inputs,
-                pos_matched_idxs,
+                matched_idxs[pos_label_inds],
                 self.cls_loss)
         # end.record()
         # torch.cuda.synchronize()
         # print("isr_p time: ", start.elapsed_time(end))
         if self.use_isr_n or self.use_isr_p:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
+            box_weights = target_weights.float()
+            label_weights = label_weights.float()
         else:
             label_weights = None
-            target_weights = None
+            box_weights = None
             avg_factor = labels.size(0)
 
         classification_loss = self.cls_loss(class_logits,
@@ -335,9 +324,9 @@ class PISALossComputation(object):
 
         if self.loss == "SmoothL1Loss":
             box_loss = smooth_l1_loss(
-                pos_box_pred_delta,
-                pos_box_target_delta,
-                weight=target_weights,
+                pos_box_pred_delta.float(),
+                pos_box_target_delta.float(),
+                weight=box_weights,
                 size_average=False,
                 beta=1,
             )
@@ -355,19 +344,18 @@ class PISALossComputation(object):
                     smooth_l1_loss,
                     k=1,
                     bias=0.2,
-                    avg_factor=regression_targets.size(0),
-                    num_class=80)
+                    avg_factor=regression_targets.size(0))
             # end.record()
             # torch.cuda.synchronize()
             # print("carl loss time: ", start.elapsed_time(end))
         elif self.loss == "GIoULoss":
             if pos_box_pred.size()[0] > 0:
-                if target_weights is not None:
-                    target_weights = target_weights.index_select(0, pos_label_inds)
+                if box_weights is not None:
+                    box_weights = box_weights.index_select(0, pos_label_inds)
                 box_loss = self.giou_loss(
-                    pos_box_pred,
-                    pos_box_target,
-                    weight=target_weights,
+                    pos_box_pred.float(),
+                    pos_box_target.float(),
+                    weight=box_weights,
                     avg_factor=labels.numel()
                 )
             else:
@@ -382,8 +370,7 @@ class PISALossComputation(object):
                     self.giou_loss_carl,
                     k=1,
                     bias=0.2,
-                    avg_factor=regression_targets.size(0),
-                    num_class=80)
+                    avg_factor=regression_targets.size(0))
 
         if self.carl:
             return classification_loss, box_loss, loss_carl

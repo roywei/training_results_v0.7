@@ -28,7 +28,7 @@ class ScoreHLRSampler(object):
         self.feature_extractor = feature_extractor
         self.predictor = predictor
 
-    def __call__(self, matched_idxs,  regression_targets, prop_boxes, image_sizes,
+    def __call__(self, labels, matched_idxs,  regression_targets, prop_boxes, image_sizes,
                  features, box_coder, is_rpn=0, objectness=None):
         """
         Arguments:
@@ -45,22 +45,22 @@ class ScoreHLRSampler(object):
         The first list contains the positive elements that were selected,
         and the second list the negative example.
         """
-        num_images = len(matched_idxs)
+        num_images = len(labels)
         with torch.no_grad():
             if num_images == 1:
                 pos_idx = []
                 neg_idx = []
                 neg_label_weights_batched = []
-                matched_idxs = [matched_idxs.view(-1)]
+                labels = [labels.view(-1)]
                 # there is actually only 1 iteration of this for loop, but keeping the loop for completeness
-                for matched_idxs_per_image in matched_idxs:
+                for labels_per_image in labels:
                     if objectness is not None:
                         objectness = objectness.view(-1)
-                        positive = torch.nonzero((matched_idxs_per_image >= 1) * (objectness > -1)).squeeze(1)
-                        negative = torch.nonzero((matched_idxs_per_image == 0) * (objectness > -1)).squeeze(1)
+                        positive = torch.nonzero((labels_per_image >= 1) * (objectness > -1)).squeeze(1)
+                        negative = torch.nonzero((labels_per_image == 0) * (objectness > -1)).squeeze(1)
                     else:
-                        positive = torch.nonzero(matched_idxs_per_image >= 1).squeeze(1)
-                        negative = torch.nonzero(matched_idxs_per_image == 0).squeeze(1)
+                        positive = torch.nonzero(labels_per_image >= 1).squeeze(1)
+                        negative = torch.nonzero(labels_per_image == 0).squeeze(1)
 
                     num_pos = int(self.batch_size_per_image * self.positive_fraction)
                     # protect against not enough positive examples
@@ -75,7 +75,7 @@ class ScoreHLRSampler(object):
 
                     # create binary mask from indices
                     pos_idx_per_image_mask = torch.zeros_like(
-                        matched_idxs_per_image, dtype=torch.bool
+                        labels_per_image, dtype=torch.bool
                     )
 
                     pos_idx_per_image_mask.index_fill_(0, pos_idx_per_image, 1)
@@ -91,9 +91,9 @@ class ScoreHLRSampler(object):
                     neg_proposals = []
                     for i in range(num_images):
                         box = BoxList(neg_bboxes, image_size=image_sizes[i])
-                        box.add_field("matched_idxs", matched_idxs_per_image[negative])
+                        box.add_field("matched_idxs", matched_idxs[i][negative])
                         box.add_field("regression_targets", regression_targets[negative])
-                        box.add_field("labels", matched_idxs_per_image[negative])
+                        box.add_field("labels", labels_per_image[negative])
                         neg_proposals.append(box)
                     x = self.feature_extractor(features, neg_proposals)
                     cls_score, box_regression = self.predictor(x)
@@ -161,7 +161,7 @@ class ScoreHLRSampler(object):
                         select_inds = torch.randperm(num_neg)[:num_expected]
                     neg_idx_per_image = negative.index_select(0, select_inds.to(negative.device))
                     neg_idx_per_image_mask = torch.zeros_like(
-                        matched_idxs_per_image, dtype=torch.bool
+                        labels_per_image, dtype=torch.bool
                     )
                     neg_idx_per_image_mask.index_fill_(0, neg_idx_per_image, 1)
                     neg_idx.append(neg_idx_per_image_mask)
@@ -176,15 +176,15 @@ class ScoreHLRSampler(object):
                 batch_neg_label_weights = []
                 # there is actually only 1 iteration of this for loop, but keeping the loop for completeness
                 for i in range(num_images):
-                    matched_idxs_per_image = matched_idxs[i]
+                    labels_per_image = labels[i]
 
-                    # if objectness is not None:
-                    #     objectness = objectness.view(-1)
-                    #     positive = torch.nonzero((matched_idxs_per_image >= 1) * (objectness > -1)).squeeze(1)
-                    #     negative = torch.nonzero((matched_idxs_per_image == 0) * (objectness > -1)).squeeze(1)
-                    # else:
-                    positive = torch.nonzero(matched_idxs_per_image >= 1).squeeze(1)
-                    negative = torch.nonzero(matched_idxs_per_image == 0).squeeze(1)
+                    if objectness is not None:
+                        objectness = objectness.view(-1)
+                        positive = torch.nonzero((labels_per_image >= 1) * (objectness > -1)).squeeze(1)
+                        negative = torch.nonzero((labels_per_image == 0) * (objectness > -1)).squeeze(1)
+                    else:
+                        positive = torch.nonzero(labels_per_image >= 1).squeeze(1)
+                        negative = torch.nonzero(labels_per_image == 0).squeeze(1)
 
                     num_pos = int(self.batch_size_per_image * self.positive_fraction)
                     # protect against not enough positive examples
@@ -200,7 +200,7 @@ class ScoreHLRSampler(object):
 
                     # create binary mask from indices
                     pos_idx_per_image_mask = torch.zeros_like(
-                        matched_idxs_per_image, dtype=torch.bool
+                        labels_per_image, dtype=torch.bool
                     )
 
                     pos_idx_per_image_mask.index_fill_(0, pos_idx_per_image, 1)
@@ -213,13 +213,13 @@ class ScoreHLRSampler(object):
                     regression_target = regression_targets[i].unsqueeze(1).view(-1, 4)
                     neg_proposals = []
                     box = BoxList(neg_box, image_size=image_sizes[i])
-                    box.add_field("matched_idxs", matched_idxs_per_image[negative])
+                    box.add_field("matched_idxs", matched_idxs[i][negative])
                     box.add_field("regression_targets", regression_target[negative])
-                    box.add_field("labels", matched_idxs_per_image[negative])
+                    box.add_field("labels", labels_per_image[negative])
                     neg_proposals.append(box)
                     x = self.feature_extractor(features, neg_proposals)
                     cls_score, box_regression = self.predictor(x)
-                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 81), reduction="none")
+                    classification_loss = F.cross_entropy(cls_score, negative.new_full((negative.size(0),), 0), reduction="none")
                     max_score, argmax_score = cls_score.softmax(-1)[:, :-1].max(-1)
                     valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
                     invalid_inds = (max_score <= self.score_threshold).nonzero().view(-1)
@@ -273,7 +273,7 @@ class ScoreHLRSampler(object):
                         neg_label_weights = (self.bias +
                                              (1 - self.bias) * neg_label_weights).pow(
                             self.k)
-                        ori_selected_loss = classification_loss[select_inds]
+                        ori_selected_loss = classification_loss[select_inds.to(negative.device)]
                         new_loss = ori_selected_loss * neg_label_weights
                         norm_ratio = ori_selected_loss.sum() / new_loss.sum()
                         neg_label_weights *= norm_ratio
@@ -283,7 +283,7 @@ class ScoreHLRSampler(object):
 
                     neg_idx_per_image = negative.index_select(0, select_inds.to(negative.device))
                     neg_idx_per_image_mask = torch.zeros_like(
-                        matched_idxs_per_image, dtype=torch.bool
+                        labels_per_image, dtype=torch.bool
                     )
                     neg_idx_per_image_mask.index_fill_(0, neg_idx_per_image, 1)
                     neg_idx.append(neg_idx_per_image_mask)
