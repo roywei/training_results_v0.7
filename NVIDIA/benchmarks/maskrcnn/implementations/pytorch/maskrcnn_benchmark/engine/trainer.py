@@ -109,7 +109,6 @@ def do_train(
         loss_dict = model(images, targets)
 
         losses = sum(loss for loss in loss_dict.values())
-        losses = losses + 0 * sum(p.sum() for p in model.parameters())
 
         # reduce losses over all GPUs for logging purposes
         if not disable_allreduce_for_logging:

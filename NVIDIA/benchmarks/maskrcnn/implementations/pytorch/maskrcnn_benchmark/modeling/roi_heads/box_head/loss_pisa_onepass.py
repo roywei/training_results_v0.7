@@ -197,8 +197,8 @@ class PISALossOnePassComputation(object):
         rois_batched = [a.bbox for a in proposals]
         regression_targets_batched = [proposal.get_field("regression_targets") for proposal in proposals]
         batch_sizes = [item.size(0) for item in labels_batched]
-        class_logits_batched = class_logits_batched[0].split(batch_sizes)
-        box_regression_batched = box_regression_batched[0].split(batch_sizes)
+        class_logits_batched = class_logits_batched[0].float().split(batch_sizes)
+        box_regression_batched = box_regression_batched[0].float().split(batch_sizes)
 
         # isr_n results
         sampled_inds_batched = []
@@ -214,6 +214,9 @@ class PISALossOnePassComputation(object):
         # gts for isr_p
         gts = []
         last_max_gt = 0
+
+        # resample proposals
+        result_proposals = []
 
         for i in range(num_images):
             class_logits = class_logits_batched[i]
@@ -237,7 +240,8 @@ class PISALossOnePassComputation(object):
                 with torch.no_grad():
                     neg_class_logits = class_logits.index_select(0, neg_inds)
                     # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
-                    original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0), reduction="none")
+                    original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0),
+                                                              reduction="none")
 
                     max_score, argmax_score = neg_class_logits.softmax(-1)[:, :-1].max(-1)
                     valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
@@ -311,13 +315,23 @@ class PISALossOnePassComputation(object):
                 label_weights = torch.cat([sampled_pos_inds.new_ones(num_pos), neg_label_weights], dim=0)
             label_weights_batched.append(label_weights)
             box_weights = sampled_inds.new_zeros(sampled_inds.size(0), 4)
-            box_weights[sampled_pos_inds] = 1.0
+            box_weights[:num_pos, :] = 1.0
             box_weights_batched.append(box_weights)
-            gt_i = proposals[i].get_field("matched_idxs")[sampled_pos_inds]
+
+            matched_idxs = proposals[i].get_field("matched_idxs")
+            gt_i = matched_idxs[sampled_pos_inds]
             gts.append(gt_i + last_max_gt)
             if len(gt_i) != 0:
                 last_max_gt = gt_i.max() + 1
 
+            # update sampled proposals for mask head
+            box = BoxList(rois[sampled_inds], image_size=proposals[i].size)
+            box.add_field("matched_idxs", matched_idxs[sampled_inds])
+            box.add_field("regression_targets", regression_targets[sampled_inds])
+            box.add_field("labels", labels[sampled_inds])
+            result_proposals.append(box)
+
+        self._proposals = result_proposals
         return sampled_labels_batched, sampled_regression_targets_batched, \
                sampled_class_logits_batched, sampled_box_regression_batched, \
                sampled_rois_batched, label_weights_batched, box_weights_batched, gts, sampled_pos_inds_batched
@@ -376,7 +390,6 @@ class PISALossOnePassComputation(object):
         # use default isr_p config: k=2 bias=0
         bbox_inputs = [labels, label_weights, regression_targets, box_weights, pos_box_pred, pos_box_target,
                        pos_label_inds, pos_labels]
-
 
         if self.use_isr_p:
             labels, label_weights, regression_targets, box_weights = isr_p(
@@ -451,7 +464,7 @@ class PISALossOnePassComputation(object):
                     avg_factor=regression_targets.size(0))
 
         if self.carl:
-            return classification_loss, box_loss, loss_carl
+            return classification_loss, box_loss, loss_carl,
         else:
             return classification_loss, box_loss
 
@@ -460,7 +473,7 @@ def make_roi_box_loss_evaluator(cfg):
     matcher = Matcher(
         cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD,
         cfg.MODEL.ROI_HEADS.BG_IOU_THRESHOLD,
-        allow_low_quality_matches=False,
+        allow_low_quality_matches=True,
     )
 
     bbox_reg_weights = cfg.MODEL.ROI_HEADS.BBOX_REG_WEIGHTS
