@@ -227,8 +227,6 @@ class BoxList(object):
             if torch.is_tensor(v):
                 bbox.add_field(k, v.index_select(0, item))
             else:
-                if k == "num_pos" or k == "num_neg":
-                    continue
                 bbox.add_field(k, v[item])
         return bbox
 
