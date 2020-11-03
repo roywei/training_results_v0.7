@@ -6,7 +6,8 @@ from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
 from .loss_pisa_onepass import make_roi_box_loss_evaluator as make_pisa_loss_onepass
-from .loss_pisa_box_head import make_roi_box_loss_evaluator
+from .loss_pisa_box_head import make_roi_box_loss_evaluator as make_pisa_loss_evaluator
+from .loss import make_roi_box_loss_evaluator
 
 class ROIBoxHead(torch.nn.Module):
     """
@@ -18,13 +19,18 @@ class ROIBoxHead(torch.nn.Module):
         self.feature_extractor = make_roi_box_feature_extractor(cfg)
         self.predictor = make_roi_box_predictor(cfg)
         self.post_processor = make_roi_box_post_processor(cfg)
-        if cfg.MODEL.ROI_HEADS.PISA_ONEPASS:
-            self.loss_evaluator = make_pisa_loss_onepass(cfg)
-            self.one_pass = True
+        if cfg.MODEL.ROI_BOX_HEAD.ISR_N or cfg.MODEL.ROI_BOX_HEAD.ISR_P:
+            self.pisa = True
+            if cfg.MODEL.ROI_BOX_HEAD.PISA_ONEPASS:
+                self.loss_evaluator = make_pisa_loss_onepass(cfg)
+                self.one_pass = True
+            else:
+                self.loss_evaluator = make_pisa_loss_evaluator(cfg)
+                self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
+                self.one_pass = False
         else:
+            self.pisa = self.one_pass = False
             self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
-            self.loss_evaluator.set_model(self.feature_extractor, self.predictor)
-            self.one_pass = False
 
     def forward(self, features, proposals, targets=None):
         """
@@ -45,7 +51,10 @@ class ROIBoxHead(torch.nn.Module):
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
-                proposals = self.loss_evaluator.subsample(proposals, targets, features)
+                if self.pisa and not self.one_pass:
+                    proposals = self.loss_evaluator.subsample(proposals, targets, features)
+                else:
+                    proposals = self.loss_evaluator.subsample(proposals, targets)
 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads

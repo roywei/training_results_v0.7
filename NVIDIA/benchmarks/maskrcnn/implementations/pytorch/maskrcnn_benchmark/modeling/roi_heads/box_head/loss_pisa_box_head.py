@@ -187,25 +187,19 @@ class PISALossComputation(object):
                                                                                            is_rpn=0, objectness=prop_scores)
                 pos_inds_per_image = [torch.nonzero(pos_ind).squeeze(1) for pos_ind in sampled_pos_inds]
                 neg_inds_per_image = [torch.nonzero(neg_ind).squeeze(1) for neg_ind in sampled_neg_inds]
-                assert len(sampled_pos_inds) == len(sampled_neg_inds) == len(neg_label_weights) == num_images
-            # batched not supported for now
-            # else:
-            #     sampled_pos_inds, sampled_neg_inds, num_pos_samples, num_neg_samples, neg_label_weights =
-            #       self.fg_bg_sampler(labels,  regression_targets, prop_boxes, image_sizes,
-            #                          features, self.box_coder, is_rpn=0, objectness=prop_scores)
-            #     pos_inds_per_image = sampled_pos_inds.split(list(num_pos_samples))
-            #     neg_inds_per_image = sampled_neg_inds.split(list(num_neg_samples))
-
+        batch_sizes = [label.size(0) for label in labels]
         prop_boxes = prop_boxes.view(-1, 4)
         regression_targets = regression_targets.view(-1, 4)
         labels = labels.view(-1)
         matched_idxs = matched_idxs.view(-1)
         result_proposals = []
+        curr_idx = 0
         for i in range(num_images):
             num_pos = pos_inds_per_image[i].size(0)
             num_neg = neg_inds_per_image[i].size(0)
             num_samples = num_pos + num_neg
             inds = torch.cat([pos_inds_per_image[i], neg_inds_per_image[i]])
+            inds = inds + curr_idx
             box = BoxList(prop_boxes[inds], image_size=image_sizes[i])
             box.add_field("matched_idxs", matched_idxs[inds])
             box.add_field("regression_targets", regression_targets[inds])
@@ -222,6 +216,7 @@ class PISALossComputation(object):
             box.add_field("label_weights", label_weights)
             box.add_field("target_weights", target_weights)
             result_proposals.append(box)
+            curr_idx = curr_idx + batch_sizes[i]
         self._proposals = result_proposals
 
         return result_proposals
@@ -391,7 +386,11 @@ def make_roi_box_loss_evaluator(cfg):
     # TODO: add pisa sampler
     if cfg.MODEL.ROI_BOX_HEAD.ISR_N:
         fg_bg_sampler = ScoreHLRSampler(
-            cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
+            cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE, cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION,
+            cfg.MODEL.ROI_BOX_HEAD.K,
+            cfg.MODEL.ROI_BOX_HEAD.BIAS,
+            cfg.MODEL.ROI_BOX_HEAD.SCORE_THRESHOLD,
+            cfg.MODEL.ROI_BOX_HEAD.IOU_THRESHOLD
         )
     else:
         fg_bg_sampler = BalancedPositiveNegativeSampler(

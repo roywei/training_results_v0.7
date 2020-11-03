@@ -145,7 +145,7 @@ class PISALossOnePassComputation(object):
             regression_targets = matched_targets.view(-1, 4)
         return labels, regression_targets.view(num_images, -1, 4), matched_idxs
 
-    def subsample(self, proposals, targets, features):
+    def subsample(self, proposals, targets):
         """
         This method performs the positive/negative sampling, and return
         the sampled proposals.
@@ -498,11 +498,11 @@ def make_roi_box_loss_evaluator(cfg):
         cfg.MODEL.ROI_BOX_HEAD.ISR_N,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_BOX_WEIGHT,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_CARL_WEIGHT,
-        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE,
-        cfg.MODEL.ROI_HEADS.K,
-        cfg.MODEL.ROI_HEADS.BIAS,
-        cfg.MODEL.ROI_HEADS.SCORE_THRESHOLD,
-        cfg.MODEL.ROI_HEADS.IOU_THRESHOLD
+        cfg.MODEL.ROI_BOX_HEAD.BATCH_SIZE_PER_IMAGE,
+        cfg.MODEL.ROI_BOX_HEAD.K,
+        cfg.MODEL.ROI_BOX_HEAD.BIAS,
+        cfg.MODEL.ROI_BOX_HEAD.SCORE_THRESHOLD,
+        cfg.MODEL.ROI_BOX_HEAD.IOU_THRESHOLD
     )
 
     return loss_evaluator

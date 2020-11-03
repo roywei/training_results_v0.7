@@ -179,9 +179,8 @@ class ScoreHLRSampler(object):
                     labels_per_image = labels[i]
 
                     if objectness is not None:
-                        objectness = objectness.view(-1)
-                        positive = torch.nonzero((labels_per_image >= 1) * (objectness > -1)).squeeze(1)
-                        negative = torch.nonzero((labels_per_image == 0) * (objectness > -1)).squeeze(1)
+                        positive = torch.nonzero((labels_per_image >= 1) * (objectness[i] > -1)).squeeze(1)
+                        negative = torch.nonzero((labels_per_image == 0) * (objectness[i] > -1)).squeeze(1)
                     else:
                         positive = torch.nonzero(labels_per_image >= 1).squeeze(1)
                         negative = torch.nonzero(labels_per_image == 0).squeeze(1)
