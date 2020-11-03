@@ -205,6 +205,10 @@ class ScoreHLRSampler(object):
                     pos_idx_per_image_mask.index_fill_(0, pos_idx_per_image, 1)
 
                     pos_idx.append(pos_idx_per_image_mask)
+                    if num_neg == 0:
+                        neg_idx.append(torch.zeros_like(labels_per_image, dtype=torch.bool))
+                        batch_neg_label_weights.append([])
+                        continue
 
                     # run forward with all negative boxes to get scores
                     prop_box = prop_boxes[i].unsqueeze(1).view(-1, 4)

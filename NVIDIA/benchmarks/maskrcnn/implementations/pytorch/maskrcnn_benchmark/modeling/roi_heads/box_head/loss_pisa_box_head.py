@@ -209,7 +209,7 @@ class PISALossComputation(object):
             if num_pos > 0:
                 target_weights[:num_pos, :] = 1.0
             if num_neg > 0:
-                if neg_label_weights:
+                if neg_label_weights and len(neg_label_weights[i]) > 0:
                     label_weights[-num_neg:] = neg_label_weights[i]
                 else:
                     label_weights[-num_neg:] = 1.0
@@ -377,7 +377,7 @@ def make_roi_box_loss_evaluator(cfg):
     matcher = Matcher(
         cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD,
         cfg.MODEL.ROI_HEADS.BG_IOU_THRESHOLD,
-        allow_low_quality_matches=False,
+        allow_low_quality_matches=True,
     )
 
     bbox_reg_weights = cfg.MODEL.ROI_HEADS.BBOX_REG_WEIGHTS
