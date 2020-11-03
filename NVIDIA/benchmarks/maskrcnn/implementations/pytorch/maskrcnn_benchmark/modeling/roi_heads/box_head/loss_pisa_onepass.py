@@ -498,7 +498,7 @@ def make_roi_box_loss_evaluator(cfg):
         cfg.MODEL.ROI_BOX_HEAD.ISR_N,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_BOX_WEIGHT,
         cfg.MODEL.ROI_BOX_HEAD.GIOU_CARL_WEIGHT,
-        cfg.MODEL.ROI_BOX_HEAD.BATCH_SIZE_PER_IMAGE,
+        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE,
         cfg.MODEL.ROI_BOX_HEAD.K,
         cfg.MODEL.ROI_BOX_HEAD.BIAS,
         cfg.MODEL.ROI_BOX_HEAD.SCORE_THRESHOLD,

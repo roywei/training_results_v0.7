@@ -243,7 +243,7 @@ class ScoreHLRSampler(object):
                         selected_bbox_pred = valid_bbox_pred[range(num_valid),
                                                              valid_argmax_score]
                         pred_bboxes = box_coder.decode(
-                             selected_bbox_pred, valid_rois)
+                            selected_bbox_pred, valid_rois)
                         pred_bboxes_with_score = torch.cat(
                             [pred_bboxes, valid_max_score[:, None]], -1)
                         group = nms_match(pred_bboxes_with_score.float(), self.iou_threshold)
