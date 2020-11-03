@@ -23,7 +23,16 @@ class CombinedROIHeads(torch.nn.ModuleDict):
     def forward(self, features, proposals, targets=None):
         losses = {}
         # TODO rename x to roi_box_features, if it doesn't increase memory consumption
+        print("************************************")
+        print("BOX_HEAD time benchmarking starting:")
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
         x, detections, loss_box = self.box(features, proposals, targets)
+        end.record()
+        torch.cuda.synchronize()
+        print("BOX_HEAD Total time: ", start.elapsed_time(end))
+        print("************************************")
         losses.update(loss_box)
         if self.cfg.MODEL.MASK_ON:
             mask_features = features

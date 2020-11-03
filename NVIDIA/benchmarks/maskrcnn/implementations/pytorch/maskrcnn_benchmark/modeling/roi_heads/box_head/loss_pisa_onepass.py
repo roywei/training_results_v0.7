@@ -240,8 +240,14 @@ class PISALossOnePassComputation(object):
                 with torch.no_grad():
                     neg_class_logits = class_logits.index_select(0, neg_inds)
                     # original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg, ), 81))
+                    start = torch.cuda.Event(enable_timing=True)
+                    end_isrn_cross_entropy = torch.cuda.Event(enable_timing=True)
+                    start.record()
                     original_neg_class_loss = F.cross_entropy(neg_class_logits, neg_inds.new_full((num_neg,), 0),
                                                               reduction="none")
+                    end_isrn_cross_entropy.record()
+                    torch.cuda.synchronize()
+                    print("ISR-N  cross_entropy time: ", start.elapsed_time(end_isrn_cross_entropy))
 
                     max_score, argmax_score = neg_class_logits.softmax(-1)[:, :-1].max(-1)
                     valid_inds = (max_score > self.score_threshold).nonzero().view(-1)
@@ -263,8 +269,17 @@ class PISALossOnePassComputation(object):
                         selected_bbox_pred = valid_bbox_pred[range(num_valid), valid_argmax_score]
                         pred_bboxes = self.box_coder.decode(selected_bbox_pred, valid_rois)
                         pred_bboxes_with_score = torch.cat([pred_bboxes, valid_max_score[:, None]], -1)
+                        start_nms = torch.cuda.Event(enable_timing=True)
+                        end_nms = torch.cuda.Event(enable_timing=True)
+                        start_nms.record()
                         group = nms_match(pred_bboxes_with_score.float(), self.iou_threshold)
+                        end_nms.record()
+                        torch.cuda.synchronize()
+                        print("ISR-N NMS time: ", start_nms.elapsed_time(end_nms))
 
+                        start_sort = torch.cuda.Event(enable_timing=True)
+                        end_sort = torch.cuda.Event(enable_timing=True)
+                        start_sort.record()
                         # imp: importance
                         imp = original_neg_class_loss.new_zeros(num_valid)
                         for g in group:
@@ -272,9 +287,13 @@ class PISALossOnePassComputation(object):
                             # g_score has already sorted
                             rank = g_score.new_tensor(range(g_score.size(0)))
                             imp[g] = num_valid - rank + g_score
+                        print("ISR-N IMP length: ", len(imp))
                         _, imp_rank_inds = imp.sort(descending=True)
                         _, imp_rank = imp_rank_inds.sort()
                         hlr_inds = imp_rank_inds[:num_neg_expected]
+                        end_sort.record()
+                        torch.cuda.synchronize()
+                        print("ISR-N SORT time: ", start_sort.elapsed_time(end_sort))
 
                         if num_rand > 0:
                             rand_inds = torch.randperm(num_invalid)[:num_rand]
@@ -353,9 +372,17 @@ class PISALossOnePassComputation(object):
             raise RuntimeError("subsample needs to be called before")
 
         # apply isr_n with batched inputs
+        print("*******")
+        start_isrn = torch.cuda.Event(enable_timing=True)
+        end_isrn = torch.cuda.Event(enable_timing=True)
+        start_isrn.record()
         sampled_labels_batched, sampled_regression_targets_batched, sampled_class_logits_batched, \
         sampled_box_regression_batched, sampled_rois_batched, label_weights_batched, \
         box_weights_batched, gts, sampled_pos_inds_batched = self.isr_n(class_logits, box_regression)
+        end_isrn.record()
+        torch.cuda.synchronize()
+        print("ISR-N time: ", start_isrn.elapsed_time(end_isrn))
+
         labels = torch.cat(sampled_labels_batched, dim=0)
         class_logits = cat(sampled_class_logits_batched, dim=0)
         box_regression = torch.cat(sampled_box_regression_batched, dim=0)
@@ -392,12 +419,19 @@ class PISALossOnePassComputation(object):
                        pos_label_inds, pos_labels]
 
         if self.use_isr_p:
+            start_isrp = torch.cuda.Event(enable_timing=True)
+            end_isrp = torch.cuda.Event(enable_timing=True)
+            start_isrp.record()
             labels, label_weights, regression_targets, box_weights = isr_p(
                 class_logits,
                 bbox_inputs,
                 torch.cat(gts, dim=0),
                 self.cls_loss)
-
+            end_isrp.record()
+            torch.cuda.synchronize()
+            print("ISR-P time: ", start_isrp.elapsed_time(end_isrp))
+        print("*******")
+        
         if self.use_isr_n or self.use_isr_p:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
             box_weights = box_weights.float()
